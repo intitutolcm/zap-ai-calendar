@@ -1,20 +1,72 @@
-import { Instance } from '../types';
+import { Instance, User } from '../types';
 import { supabase } from './supabase';
 
 const EVO_URL = import.meta.env.VITE_EVO_API_URL || process.env.EVO_API_URL;
 const EVO_KEY = import.meta.env.VITE_EVO_API_KEY || process.env.EVO_API_KEY;
+const GLOBAL_WEBHOOK_URL = import.meta.env.VITE_WEBHOOK_URL;
 
 const headers = {
   'apikey': EVO_KEY || '',
   'Content-Type': 'application/json'
 };
 
+// Função auxiliar para obter o ID da empresa de forma consistente
+const getTargetId = (user: User) => user.company_id || user.id;
+
 export const api = {
+  users: {
+    listProfiles: async (user: User) => {
+      if (!user) return [];
+      let query = supabase.from('users_profile').select('*');
+      if (user.role === 'admin') {
+        query = query.eq('role', 'company');
+      } else {
+        const companyId = getTargetId(user);
+        query = query.eq('company_id', companyId);
+      }
+      const { data, error } = await query.order('name', { ascending: true });    
+      if (error) {
+        console.error("Erro ao listar perfis:", error);
+        throw error;
+      }
+      return data;
+    },
+    upsert: async (userData: any) => {
+      const { data, error } = await supabase.from('users_profile').upsert(userData).select().single();
+      if (error) throw error;
+      return data;
+    },
+    delete: async (id: string) => {
+      const { error } = await supabase.from('users_profile').delete().eq('id', id);
+      if (error) throw error;
+    },
+    register: async (userData: any) => {
+      const { data, error } = await supabase.functions.invoke('create-user-admin', { body: userData });
+      if (error) throw error;
+      return data;
+    }
+  },
+
+  templates: {
+    listAll: async (user: User) => {
+      const cid = getTargetId(user);
+      const { data, error } = await supabase.from('prompt_templates').select('*').or(`company_id.eq.${cid},is_global.eq.true`).order('name', { ascending: true });
+      if (error) throw error;
+      return data;
+    },
+    save: async (template: any) => {
+      const { data, error } = await supabase.from('prompt_templates').upsert(template).select().single();
+      if (error) throw error;
+      return data;
+    }
+  },
+
   instances: {
-    list: async (): Promise<Instance[]> => {
+    list: async (user: User): Promise<Instance[]> => {
       const { data: dbInstances, error: dbError } = await supabase
         .from('instances')
-        .select('id, name, token, company_id, agent_id');
+        .select('id, name, token, company_id, agent_id')
+        .eq('company_id', getTargetId(user));
 
       if (dbError) throw dbError;
       if (!dbInstances || dbInstances.length === 0) return [];
@@ -22,12 +74,10 @@ export const api = {
       try {
         const response = await fetch(`${EVO_URL}/instance/fetchInstances`, { headers });
         const evoArray = await response.json(); 
-
         return dbInstances.map(dbInst => {
           const evoInst = Array.isArray(evoArray) ? evoArray.find((e: any) => 
             e.name?.toLowerCase().trim() === dbInst.name?.toLowerCase().trim()
           ) : null;
-
           return {
             ...dbInst,
             status: evoInst?.connectionStatus || 'close',
@@ -36,306 +86,176 @@ export const api = {
           };
         });
       } catch (error) {
-        console.error("Erro Evolution API:", error);
         return dbInstances.map(inst => ({ ...inst, status: 'close' }));
       }
     },
-
-    checkStatus: async (instanceName: string): Promise<boolean> => {
-      try {
-        const response = await fetch(`${EVO_URL}/instance/connectionState/${instanceName}`, { headers });
-        const data = await response.json();
-        return data.instance?.state === 'open' || data.instance?.status === 'open' || data.instance?.connectionStatus === 'open';
-      } catch {
-        return false;
-      }
+    create: async (name: string, user: User) => {
+      const companyId = getTargetId(user);
+      const { data: settings } = await supabase.from('settings').select('webhook_url').eq('company_id', companyId).maybeSingle();
+      const body = {
+        instanceName: name,
+        integration: "WHATSAPP-BAILEYS",
+        webhook: { url: GLOBAL_WEBHOOK_URL, byEvents: false, base64: true, events: ["MESSAGES_UPSERT"] }
+      };
+      const response = await fetch(`${EVO_URL}/instance/create`, { method: 'POST', headers, body: JSON.stringify(body) });
+      if (!response.ok) throw new Error('Erro na Evolution API');
+      const evoData = await response.json();
+      const { error } = await supabase.from('instances').insert({ name, token: evoData.hash || evoData.instance?.hash, company_id: companyId });
+      if (error) throw error;
     },
-
-    create: async (name: string, userId: string) => {
-  // 1. Busca a URL de Webhook nas configurações da empresa
-  const { data: settings } = await supabase
-    .from('settings')
-    .select('webhook_url')
-    .eq('company_id', userId)
-    .maybeSingle();
-
-  const webhookUrl = settings?.webhook_url || "";
-
-  // 2. Monta o Payload seguindo EXATAMENTE o seu modelo
-  const body = {
-    instanceName: name,
-    integration: "WHATSAPP-BAILEYS",
-    proxyHost: "",     // No futuro, você pode passar valores aqui
-    proxyPort: "",
-    proxyProtocol: "",
-    proxyUsername: "",
-    proxyPassword: "",
-    webhook: {
-      url: webhookUrl,
-      byEvents: false,
-      base64: true,
-      events: [
-        "MESSAGES_UPSERT"
-      ]
-    }
-  };
-
-  // 3. Chamada ÚNICA para criação e configuração
-  const response = await fetch(`${EVO_URL}/instance/create`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body)
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || 'Erro ao criar instância na Evolution');
-  }
-
-  const evoData = await response.json();
-  const hash = evoData.hash || evoData.instance?.hash;
-
-  // 4. Salva no Supabase (já incluindo os novos campos de proxy se desejar)
-  const { error } = await supabase.from('instances').insert({
-    name: name,
-    token: hash,
-    company_id: userId,
-    proxy_host: body.proxyHost,
-    proxy_port: body.proxyPort,
-    proxy_protocol: body.proxyProtocol,
-    proxy_username: body.proxyUsername,
-    proxy_password: body.proxyPassword
-  });
-
-  if (error) throw error;
-},
-
-    connect: async (instanceName: string): Promise<string> => {
-      const response = await fetch(`${EVO_URL}/instance/connect/${instanceName}`, { headers });
-      const data = await response.json();
-      if (data.error || data.message) throw new Error(data.message || 'Erro no QR Code');
-      return data.base64 || data.code || ''; 
+    connect: async (instanceName: string) => {
+      const res = await fetch(`${EVO_URL}/instance/connect/${instanceName}`, { headers });
+      const data = await res.json();
+      return data.base64 || data.code || '';
     },
-
-    logout: async (instanceName: string) => {
-      await fetch(`${EVO_URL}/instance/logout/${instanceName}`, { method: 'DELETE', headers });
-    },
-
-    restart: async (name: string) => {
-      await fetch(`${EVO_URL}/instance/restart/${name}`, { method: 'POST', headers });
-    },
-
+    logout: async (name: string) => fetch(`${EVO_URL}/instance/logout/${name}`, { method: 'DELETE', headers }),
+    restart: async (name: string) => fetch(`${EVO_URL}/instance/restart/${name}`, { method: 'POST', headers }),
     delete: async (name: string) => {
       await fetch(`${EVO_URL}/instance/delete/${name}`, { method: 'DELETE', headers });
       await supabase.from('instances').delete().eq('name', name);
     },
-
-    updateAgent: async (instanceName: string, agentId: string | null) => {
-      const { error } = await supabase
-        .from('instances')
-        .update({ 
-          agent_id: agentId === "" ? null : agentId 
-        })
-        .eq('name', instanceName);
-
-      if (error) throw error;
-    },
-
+    updateAgent: async (name: string, agentId: string | null) => {
+      await supabase.from('instances').update({ agent_id: agentId || null }).eq('name', name);
+    }
   },
 
   settings: {
-    get: async (companyId: string) => {
+    get: async (user: User) => {
       const { data, error } = await supabase
         .from('settings')
         .select('*')
-        .eq('company_id', companyId)
+        .eq('company_id', getTargetId(user))
         .maybeSingle();
-      
       if (error) throw error;
       return data;
     },
-
-    save: async (companyId: string, updates: any) => {
-      const { error } = await supabase
-        .from('settings')
-        .upsert({
-          company_id: companyId,
-          business_hours_start: updates.businessHoursStart,
-          business_hours_end: updates.businessHoursEnd,
-          offline_message: updates.offlineMessage,
-          fallback_message: updates.fallback_message,
-          webhook_url: updates.webhookUrl,
-          updated_at: new Date().toISOString()
-        }, { 
-          onConflict: 'company_id' 
-        });
-
+    save: async (user: User, updates: any) => {
+      const { error } = await supabase.from('settings').upsert({
+        company_id: getTargetId(user),
+        business_hours_start: updates.businessHoursStart,
+        business_hours_end: updates.businessHoursEnd,
+        working_days: updates.workingDays, 
+        address: updates.address,           
+        website: updates.website,          
+        instagram: updates.instagram,       
+        offline_message: updates.offlineMessage,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'company_id' });
+      
       if (error) throw error;
     }
   },
-  
+
   conversations: {
-    list: async () => {
+    list: async (user: User) => {
       const { data, error } = await supabase
         .from('conversations')
-        .select(`
-          *,
-          contacts (name, phone),
-          instances (name) 
-        `)
+        .select('*, contacts!inner(*), instances!inner(*)')
+        .eq('instances.company_id', getTargetId(user))
         .order('last_timestamp', { ascending: false });
-
       if (error) throw error;
-
-      // Retornamos os dados diretamente para o componente
       return data;
     },
-
-    updateMode: async (id: string, isHuman: boolean) => {
-      const { error } = await supabase
-        .from('conversations')
-        .update({ is_human_active: isHuman })
-        .eq('id', id);
-      if (error) throw error;
-    },
-
-    getUnreadCount: async () => {
+    getUnreadCount: async (user: User) => {
       const { count, error } = await supabase
         .from('messages')
-        .select('*', { count: 'exact', head: true })
-        .eq('sender', 'USER')
-        .eq('is_read', false);
+        .select('*, conversations!inner(instances!inner(company_id))', { count: 'exact', head: true })
+        .eq('sender', 'USER').eq('is_read', false)
+        .eq('conversations.instances.company_id', getTargetId(user));
       if (error) throw error;
       return count || 0;
     },
-
     markAsRead: async (conversationId: string) => {
-      const { error } = await supabase
-        .from('messages')
-        .update({ is_read: true })
-        .eq('conversation_id', conversationId)
-        .eq('sender', 'USER');
-      if (error) throw error;
+      await supabase.from('messages').update({ is_read: true }).eq('conversation_id', conversationId).eq('sender', 'USER');
+    },
+    updateMode: async (id: string, isHuman: boolean) => {
+      await supabase.from('conversations').update({ is_human_active: isHuman }).eq('id', id);
     }
   },
 
   messages: {
     list: async (conversationId: string) => {
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('conversation_id', conversationId)
-        .order('timestamp', { ascending: true });
+      const { data, error } = await supabase.from('messages').select('*').eq('conversation_id', conversationId).order('timestamp', { ascending: true });
       if (error) throw error;
       return data;
     },
-
     send: async (instanceName: string, number: string, text: string, conversationId: string) => {
-      const response = await fetch(`${EVO_URL}/message/sendText/${instanceName}`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ number, text })
-      });
-      if (!response.ok) throw new Error('Erro ao enviar via WhatsApp');
-
-      const { error } = await supabase.from('messages').insert({
-        conversation_id: conversationId,
-        sender: 'OPERATOR',
-        content: text
-      });
-      if (error) throw error;
+      const res = await fetch(`${EVO_URL}/message/sendText/${instanceName}`, { method: 'POST', headers, body: JSON.stringify({ number, text }) });
+      if (!res.ok) throw new Error('Erro ao enviar WhatsApp');
+      await supabase.from('messages').insert({ conversation_id: conversationId, sender: 'OPERATOR', content: text });
     }
   },
 
   appointments: {
-    list: async () => {
+    list: async (user: User) => {
       const { data, error } = await supabase
         .from('appointments')
-        .select('id, status, appointment_date, appointment_time, contacts (name), services (name), professionals (name)')
+        .select('*, contacts!inner(company_id, name), services(name, price), professionals(name)')
+        .eq('contacts.company_id', getTargetId(user))
         .order('appointment_date', { ascending: true });
+      
       if (error) throw error;
       return (data || []).map(ap => ({
         id: ap.id,
         status: ap.status, 
         time: ap.appointment_time,
         date: ap.appointment_date,
-        contactName: ap.contacts?.name || 'Cliente sem nome',
-        serviceName: ap.services?.name || 'Serviço geral',
-        professionalName: ap.professionals?.name || 'Profissional'
+        contactName: ap.contacts?.name,
+        serviceName: ap.services?.name,
+        professionalName: ap.professionals?.name,
+        price: ap.services?.price || 0 
       }));
     },
 
-    create: async (data: any) => {
+    create: async (data: any, user: User) => {
       const { error } = await supabase.from('appointments').insert({
         contact_id: data.contactId,
         service_id: data.serviceId,
         professional_id: data.professionalId,
         appointment_date: data.date,
         appointment_time: data.time,
+        company_id: getTargetId(user), // Injeção obrigatória para isolação
         status: 'PENDING'
       });
       if (error) throw error;
     },
 
     updateStatus: async (id: string, status: string) => {
-    const { error } = await supabase.from('appointments').update({ status }).eq('id', id);
-    if (error) throw error;
+      const { error } = await supabase
+        .from('appointments')
+        .update({ status })
+        .eq('id', id);
+      if (error) throw error;
     }
   },
 
   business: {
-  services: {
-    list: async () => {
-      const { data, error } = await supabase
-        .from('services')
-        .select('*')
-        .order('name', { ascending: true });
-      if (error) throw error;
-      return data;
+    services: {
+      list: async (user: User) => {
+        const { data, error } = await supabase.from('services').select('*').eq('company_id', getTargetId(user)).order('name', { ascending: true });
+        if (error) throw error;
+        return data;
+      },
+      upsert: async (data: any) => supabase.from('services').upsert(data)
     },
-    // O upsert substitui o create e o update ao mesmo tempo
-    upsert: async (data: any) => {
-      const { error } = await supabase.from('services').upsert(data);
-      if (error) throw error;
-    },
-    delete: async (id: string) => {
-      const { error } = await supabase.from('services').delete().eq('id', id);
-      if (error) throw error;
-    },
+    professionals: {
+      list: async (user: User) => {
+        const { data, error } = await supabase.from('professionals').select('*').eq('company_id', getTargetId(user)).order('name', { ascending: true });
+        if (error) throw error;
+        return data;
+      },
+      upsert: async (data: any) => supabase.from('professionals').upsert(data)
+    }
   },
-  professionals: {
-    list: async () => {
-      const { data, error } = await supabase
-        .from('professionals')
-        .select('*')
-        .order('name', { ascending: true });
-      if (error) throw error;
-      return data;
-    },
-    upsert: async (data: any) => {
-      const { error } = await supabase.from('professionals').upsert(data);
-      if (error) throw error;
-    },
-    delete: async (id: string) => {
-      const { error } = await supabase.from('professionals').delete().eq('id', id);
-      if (error) throw error;
-    },
-  }
-},
 
   billing: {
-    listInvoices: async () => {
-      const { data, error } = await supabase.from('invoices').select('*').order('data_emissao', { ascending: false });
+    listInvoices: async (user: User) => {
+      const { data, error } = await supabase.from('invoices').select('*, contacts!inner(company_id)').eq('contacts.company_id', getTargetId(user)).order('data_emissao', { ascending: false });
       if (error) throw error;
       return data;
     },
-    getPixCharge: async (faturaId: string) => {
-      const { data, error } = await supabase.from('pix_charges').select('*').eq('fatura_id', faturaId).maybeSingle();
-      if (error) throw error;
-      return data;
-    },
-    getStats: async () => {
-      const { data, error } = await supabase.from('invoices').select('valor, status_fatura');
+    getStats: async (user: User) => {
+      const { data, error } = await supabase.from('invoices').select('valor, status_fatura, contacts!inner(company_id)').eq('contacts.company_id', getTargetId(user));
       if (error) throw error;
       const stats = { totalOpen: 0, totalReceived: 0, overdueCount: 0, pendingPix: 0 };
       data.forEach(inv => {
@@ -344,18 +264,37 @@ export const api = {
         if (inv.status_fatura === 'Vencida') stats.overdueCount++;
       });
       return stats;
-    }
+    },
+    getPixCharge: async (faturaId: string) => {
+    const { data, error } = await supabase
+      .from('pix_charges')
+      .select('*')
+      .eq('invoice_id', faturaId)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+    },
   },
-  
-    agents: {
-    list: async (userId: string) => {
+
+agents: {
+    /**
+     * Lista todos os agentes da empresa com seus respectivos vínculos
+     */
+    list: async (user: any) => {
       const { data, error } = await supabase
         .from('agents')
-        .select('*')
-        .eq('company_id', userId)
+        .select(`
+          *,
+          agent_tools (
+            tool_id
+          )
+        `)
+        .eq('company_id', user.company_id || user.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
+
+      // Mapeamento para CamelCase para manter o padrão do seu Frontend
       return data.map(a => ({
         id: a.id,
         name: a.name,
@@ -363,58 +302,93 @@ export const api = {
         enableAudio: a.enable_audio,
         enableImage: a.enable_image,
         isMultiAgent: a.is_multi_agent,
-        company_id: a.company_id
+        parentAgentId: a.parent_agent_id,
+        company_id: a.company_id,
+        // Transforma a lista de objetos de ferramentas em um array simples de IDs
+        selectedTools: a.agent_tools?.map((t: any) => t.tool_id) || []
       }));
     },
-    
-    save: async (agent: any, userId: string) => {
+
+    /**
+     * Salva ou Atualiza um Agente e gerencia suas flags de Multi-Agente
+     */
+    save: async (agent: any, user: any) => {
       const payload = {
         name: agent.name,
         prompt: agent.prompt,
         enable_audio: agent.enableAudio,
         enable_image: agent.enableImage,
         is_multi_agent: agent.isMultiAgent,
-        company_id: userId
+        // Se for principal, o pai deve ser nulo obrigatoriamente
+        parent_agent_id: agent.isMultiAgent ? null : agent.parentAgentId,
+        company_id: user.company_id || user.id
       };
 
+      let result;
+
       if (agent.id) {
+        // Update
         const { data, error } = await supabase
           .from('agents')
           .update(payload)
           .eq('id', agent.id)
           .select()
           .single();
+        
         if (error) throw error;
-        return data; // Retorna o agente atualizado
+        result = data;
       } else {
+        // Insert
         const { data, error } = await supabase
           .from('agents')
           .insert(payload)
           .select()
           .single();
+        
         if (error) throw error;
-        return data; // Retorna o agente novo com ID gerado
+        result = data;
       }
+
+      return result;
     },
 
+    /**
+     * Remove um agente (o banco cuidará de remover os vínculos em agent_tools via CASCADE)
+     */
     delete: async (id: string) => {
-      const { error } = await supabase.from('agents').delete().eq('id', id);
+      const { error } = await supabase
+        .from('agents')
+        .delete()
+        .eq('id', id);
+      
       if (error) throw error;
     }
   },
 
+  tools: {
+    /**
+     * Lista todas as ferramentas (functions) disponíveis no sistema
+     */
+    listAll: async () => {
+      const { data, error } = await supabase
+        .from('tools')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+      return data;
+    }
+  },
+
   helpers: {
-    fetchFormDeps: async () => {
-      const [contacts, services, professionals] = await Promise.all([
-        supabase.from('contacts').select('id, name'),
-        supabase.from('services').select('id, name'),
-        supabase.from('professionals').select('id, name')
+    fetchFormDeps: async (user: User) => {
+      const cid = getTargetId(user);
+      const [c, s, p] = await Promise.all([
+        supabase.from('contacts').select('id, name').eq('company_id', cid),
+        supabase.from('services').select('id, name').eq('company_id', cid),
+        supabase.from('professionals').select('id, name').eq('company_id', cid)
       ]);
-      return { 
-        contacts: contacts.data || [], 
-        services: services.data || [], 
-        professionals: professionals.data || [] 
-      };
+      return { contacts: c.data || [], services: s.data || [], professionals: p.data || [] };
     }
   }
 };

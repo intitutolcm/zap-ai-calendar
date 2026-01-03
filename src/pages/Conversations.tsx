@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '@/services/api';
 import { supabase } from '@/services/supabase';
+import { useAuth } from '@/hooks/useAuth'; // 1. Importar o hook de autenticação
 import { ToastType } from '@/components/Toast';
 import MessageBubble from '@/components/MessageBubble';
 
@@ -9,6 +10,7 @@ interface ConversationsProps {
 }
 
 const ConversationsPage: React.FC<ConversationsProps> = ({ showToast }) => {
+  const { user } = useAuth(); // 2. Obter o utilizador logado
   const [conversations, setConversations] = useState<any[]>([]);
   const [selectedChat, setSelectedChat] = useState<any | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
@@ -16,11 +18,12 @@ const ConversationsPage: React.FC<ConversationsProps> = ({ showToast }) => {
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const loadConversations = async () => {
+    if (!user) return; // Segurança contra chamadas sem user
     try {
-      const data = await api.conversations.list();
+      // 3. Passar o user para a API para respeitar o company_id
+      const data = await api.conversations.list(user);
       setConversations(data);
       
-      // Atualiza o selectedChat se ele já estiver aberto para refletir mudanças de status (is_human_active)
       if (selectedChat) {
         const updated = data.find((c: any) => c.id === selectedChat.id);
         if (updated) setSelectedChat(updated);
@@ -40,32 +43,32 @@ const ConversationsPage: React.FC<ConversationsProps> = ({ showToast }) => {
   };
 
   useEffect(() => {
-    loadConversations();
+    if (user) {
+      loadConversations();
 
-    // REALTIME: Escuta mensagens E mudanças na conversa (como o status da IA)
-    const channel = supabase
-      .channel('chat_updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
-        if (selectedChat && (payload.new as any).conversation_id === selectedChat.id) {
-          loadMessages(selectedChat.id);
-        }
-        loadConversations();
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'conversations' }, () => {
-        // Quando o status de is_human_active mudar via banco/webhook
-        loadConversations();
-      })
-      .subscribe();
+      const channel = supabase
+        .channel('chat_updates')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
+          if (selectedChat && (payload.new as any).conversation_id === selectedChat.id) {
+            loadMessages(selectedChat.id);
+          }
+          loadConversations();
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'conversations' }, () => {
+          loadConversations();
+        })
+        .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
-  }, [selectedChat]);
+      return () => { supabase.removeChannel(channel); };
+    }
+  }, [user, selectedChat?.id]); // 4. Dependência correta para evitar loops
 
   useEffect(() => {
     if (selectedChat) {
       loadMessages(selectedChat.id);
       api.conversations.markAsRead(selectedChat.id);
     }
-  }, [selectedChat?.id]); // Dependência apenas do ID
+  }, [selectedChat?.id]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -89,15 +92,12 @@ const ConversationsPage: React.FC<ConversationsProps> = ({ showToast }) => {
     }
   };
 
-  // Função Única para alternar entre IA e Humano
   const toggleAIStatus = async (activateHuman: boolean) => {
     if (!selectedChat) return;
     try {
       await api.conversations.updateMode(selectedChat.id, activateHuman);
       const msg = activateHuman ? 'IA pausada. Você assumiu.' : 'IA reativada com sucesso!';
       showToast(msg, activateHuman ? 'info' : 'success');
-      
-      // O loadConversations no Realtime atualizará o estado local automaticamente
     } catch (error) {
       showToast('Erro ao alterar status do chat.', 'error');
     }

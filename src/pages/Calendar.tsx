@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '@/services/api';
+import { useAuth } from '@/hooks/useAuth';
 import { ToastType } from '@/components/Toast';
 
 interface CalendarPageProps {
@@ -7,58 +8,69 @@ interface CalendarPageProps {
 }
 
 const CalendarPage: React.FC<CalendarPageProps> = ({ showToast }) => {
+  const { user } = useAuth();
+
   const [activeTab, setActiveTab] = useState<'calendar' | 'list'>('calendar');
   const [appointments, setAppointments] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Estados para Paginação
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 6;
-
-  // Estados para o Calendário
   const [currentDate, setCurrentDate] = useState(new Date());
   const [filterType, setFilterType] = useState<'day' | 'week' | 'month'>('month');
 
-  // Dependências do Formulário
-  const [formDeps, setFormDeps] = useState<{contacts: any[], services: any[], professionals: any[]}>({
-    contacts: [], services: [], professionals: []
+  const [formDeps, setFormDeps] = useState<{
+    contacts: any[];
+    services: any[];
+    professionals: any[];
+  }>({
+    contacts: [],
+    services: [],
+    professionals: [],
   });
 
   const [formData, setFormData] = useState({
-    contactId: '', serviceId: '', professionalId: '', date: '', time: ''
+    contactId: '',
+    serviceId: '',
+    professionalId: '',
+    date: '',
+    time: '',
   });
 
-  // --- LÓGICA DE DATA BRASIL ---
-  // Obtém a data de hoje no formato YYYY-MM-DD considerando o fuso local do Brasil
-  const getTodayBR = () => {
-    const now = new Date();
-    return now.toLocaleDateString('en-CA'); // Retorna YYYY-MM-DD
-  };
+  const getTodayBR = () => new Date().toLocaleDateString('en-CA');
   const todayStr = getTodayBR();
 
   const loadData = async () => {
+    if (!user) return;
+
     setIsLoading(true);
+
     try {
       const [aptData, deps] = await Promise.all([
-        api.appointments.list(),
-        api.helpers.fetchFormDeps()
+        api.appointments.list(user),
+        api.helpers.fetchFormDeps(user),
       ]);
+
       setAppointments(aptData || []);
       setFormDeps(deps);
     } catch (error) {
       showToast('Erro ao carregar dados', 'error');
-    } finally { setIsLoading(false); }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    if (user) loadData();
+  }, [user]);
 
-  // Geração de dias do mês
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
     const month = date.getMonth();
     const firstDay = new Date(year, month, 1).getDay();
     const days = new Date(year, month + 1, 0).getDate();
+
     return { firstDay, days };
   };
 
@@ -69,9 +81,18 @@ const CalendarPage: React.FC<CalendarPageProps> = ({ showToast }) => {
       showToast('Não é possível agendar em datas passadas.', 'info');
       return;
     }
-    const selectedDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
-    const dateString = selectedDate.toLocaleDateString('en-CA');
-    setFormData({ ...formData, date: dateString });
+
+    const selectedDate = new Date(
+      currentDate.getFullYear(),
+      currentDate.getMonth(),
+      day
+    );
+
+    setFormData({
+      ...formData,
+      date: selectedDate.toLocaleDateString('en-CA'),
+    });
+
     setIsModalOpen(true);
   };
 
@@ -80,21 +101,38 @@ const CalendarPage: React.FC<CalendarPageProps> = ({ showToast }) => {
       await api.appointments.updateStatus(id, newStatus);
       showToast(`Status: ${newStatus}`, 'success');
       loadData();
-    } catch (error) { showToast('Erro ao atualizar status', 'error'); }
+    } catch (error) {
+      showToast('Erro ao atualizar status', 'error');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!user) return;
+
     if (formData.date < todayStr) {
       showToast('Data inválida.', 'error');
       return;
     }
+
     try {
-      await api.appointments.create(formData);
+      await api.appointments.create(formData, user);
       showToast('Agendamento realizado!', 'success');
+
       setIsModalOpen(false);
+      setFormData({
+        contactId: '',
+        serviceId: '',
+        professionalId: '',
+        date: '',
+        time: '',
+      });
+
       loadData();
-    } catch (error) { showToast('Erro ao agendar', 'error'); }
+    } catch (error) {
+      showToast('Erro ao agendar', 'error');
+    }
   };
 
   // Paginação

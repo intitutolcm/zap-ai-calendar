@@ -33,7 +33,7 @@ const InstancesPage: React.FC<InstancesPageProps> = ({ showToast }) => {
   const loadInstances = async () => {
     setIsLoading(true);
     try {
-      const data = await api.instances.list();
+      const data = await api.instances.list(user);
       setInstances(data);
     } catch (error) {
       showToast('Erro ao carregar instâncias', 'error');
@@ -43,8 +43,10 @@ const InstancesPage: React.FC<InstancesPageProps> = ({ showToast }) => {
   };
 
   useEffect(() => {
+  if (user) {
     loadInstances();
-  }, []);
+  }
+}, [user]);
 
   // Polling para verificar conexão do QR Code
   useEffect(() => {
@@ -77,7 +79,7 @@ const InstancesPage: React.FC<InstancesPageProps> = ({ showToast }) => {
   showToast('Criando instância...', 'info');
   try {
     // Enviamos o finalName (com hash) para a API
-    await api.instances.create(finalName, user.id, formData);
+    await api.instances.create(finalName, user);
     
     showToast('Instância criada com sucesso!', 'success');
     setIsAdding(false);

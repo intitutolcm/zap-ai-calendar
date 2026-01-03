@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '@/services/api';
+import { useAuth } from '@/hooks/useAuth'; // 1. Importar useAuth
 import { ToastType } from '@/components/Toast';
 
 interface BusinessPageProps {
@@ -9,9 +10,9 @@ interface BusinessPageProps {
 const WEEK_DAYS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
 
 const BusinessPage: React.FC<BusinessPageProps> = ({ showToast }) => {
-  // Alterado para suportar 3 abas
+  const { user } = useAuth(); // 2. Obter o utilizador
   const [activeSubTab, setActiveSubTab] = useState<'services' | 'products' | 'staff'>('services');
-  const [items, setItems] = useState<any[]>([]); // Lista unificada para serviços/produtos
+  const [items, setItems] = useState<any[]>([]);
   const [professionals, setProfessionals] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -29,14 +30,16 @@ const BusinessPage: React.FC<BusinessPageProps> = ({ showToast }) => {
   });
 
   const loadData = async () => {
+    if (!user) return; // 3. Proteção
     setIsLoading(true);
     try {
       if (activeSubTab === 'staff') {
-        const result = await api.business.professionals.list();
+        // 4. Passar user para a listagem
+        const result = await api.business.professionals.list(user);
         setProfessionals(result || []);
       } else {
-        const result = await api.business.services.list();
-        // Filtra localmente se é Serviço ou Produto
+        // 4. Passar user para a listagem
+        const result = await api.business.services.list(user);
         const filtered = result?.filter((i: any) => 
           activeSubTab === 'services' ? i.category === 'SERVICE' : i.category === 'PRODUCT'
         );
@@ -49,7 +52,31 @@ const BusinessPage: React.FC<BusinessPageProps> = ({ showToast }) => {
     }
   };
 
-  useEffect(() => { loadData(); }, [activeSubTab]);
+  useEffect(() => { 
+    if (user) loadData(); 
+  }, [activeSubTab, user]);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
+    try {
+      // 5. Injetar o ID da empresa no payload antes de salvar
+      const companyId = user.company_id || user.id;
+      const payload = activeSubTab === 'staff' 
+        ? { ...staffForm, company_id: companyId } 
+        : { ...itemForm, company_id: companyId };
+
+      await api.business[activeSubTab === 'staff' ? 'professionals' : 'services'].upsert({
+        ...payload,
+        ...(editingId ? { id: editingId } : {})
+      });
+
+      showToast('Salvo com sucesso!', 'success');
+      setIsModalOpen(false);
+      loadData();
+    } catch (error) { showToast('Erro ao salvar', 'error'); }
+  };
 
   const openModal = (data?: any) => {
     if (data) {
@@ -68,20 +95,6 @@ const BusinessPage: React.FC<BusinessPageProps> = ({ showToast }) => {
       }
     }
     setIsModalOpen(true);
-  };
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const payload = activeSubTab === 'staff' ? staffForm : itemForm;
-      await api.business[activeSubTab === 'staff' ? 'professionals' : 'services'].upsert({
-        ...payload,
-        ...(editingId ? { id: editingId } : {})
-      });
-      showToast('Salvo com sucesso!', 'success');
-      setIsModalOpen(false);
-      loadData();
-    } catch (error) { showToast('Erro ao salvar', 'error'); }
   };
 
   const handleDelete = async (id: string) => {

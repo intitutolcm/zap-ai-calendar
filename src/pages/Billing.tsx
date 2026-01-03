@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '@/services/api';
+import { useAuth } from '@/hooks/useAuth'; // 1. Importar useAuth
 import { Invoice, PixCharge } from '@/types';
 import { QRCodeCanvas } from 'qrcode.react';
 import { ToastType } from '@/components/Toast';
@@ -9,6 +10,7 @@ interface BillingPageProps {
 }
 
 const BillingPage: React.FC<BillingPageProps> = ({ showToast }) => {
+  const { user } = useAuth(); // 2. Obter usuário logado
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [appointments, setAppointments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -16,12 +18,13 @@ const BillingPage: React.FC<BillingPageProps> = ({ showToast }) => {
   const [pixCharge, setPixCharge] = useState<PixCharge | null>(null);
 
   const loadData = async () => {
+    if (!user) return; // 3. Proteção
     setIsLoading(true);
     try {
-      // Carregamos faturas e agendamentos para cruzar os dados
+      // 4. Passar 'user' para as chamadas de API
       const [invData, aptData] = await Promise.all([
-        api.billing.listInvoices(),
-        api.appointments.list()
+        api.billing.listInvoices(user),
+        api.appointments.list(user)
       ]);
       setInvoices(invData || []);
       setAppointments(aptData || []);
@@ -32,9 +35,11 @@ const BillingPage: React.FC<BillingPageProps> = ({ showToast }) => {
     }
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { 
+    if (user) loadData(); 
+  }, [user]);
 
-  // Cálculos Dinâmicos baseados nos Agendamentos
+  // Cálculos Dinâmicos (Agora com curr.price vindo da API atualizada)
   const stats = {
     confirmados: appointments.filter(a => a.status === 'CONFIRMED').reduce((acc, curr) => acc + (curr.price || 0), 0),
     pendentes: appointments.filter(a => a.status === 'PENDING').reduce((acc, curr) => acc + (curr.price || 0), 0),
@@ -50,7 +55,7 @@ const BillingPage: React.FC<BillingPageProps> = ({ showToast }) => {
       default: return 'bg-slate-100 text-slate-500 border-slate-200';
     }
   };
-
+  
   const handleViewPix = async (invoice: Invoice) => {
     try {
       const charge = await api.billing.getPixCharge(invoice.id);
@@ -58,12 +63,14 @@ const BillingPage: React.FC<BillingPageProps> = ({ showToast }) => {
         setSelectedInvoice(invoice);
         setPixCharge(charge);
       } else {
-        showToast('Cobrança PIX não gerada para esta fatura.', 'info');
+        showToast('Cobrança PIX não gerada.', 'info');
       }
     } catch (error) {
       showToast('Erro ao buscar dados do PIX', 'error');
     }
   };
+
+  if (isLoading) return <div className="p-8">Carregando dados financeiros...</div>;
 
   return (
     <div className="p-8 h-full overflow-y-auto custom-scrollbar bg-slate-50/50">

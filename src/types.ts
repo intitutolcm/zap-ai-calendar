@@ -32,6 +32,7 @@ export interface Message {
   content: string;
   timestamp: Date;
   isHumanActive?: boolean;
+  company_id: string;
 }
 
 export interface Conversation {
@@ -42,6 +43,7 @@ export interface Conversation {
   isHumanActive: boolean;
   instanceId: string;
   unreadCount: number;
+  company_id: string;
 }
 
 export interface Agent {
@@ -51,6 +53,8 @@ export interface Agent {
   enableAudio: boolean;
   enableImage: boolean;
   isMultiAgent: boolean;
+  parentAgentId?: string;
+  company_id: string;
 }
 
 export interface Service {
@@ -60,6 +64,7 @@ export interface Service {
   duration: string;
   description: string;
   category: 'SERVICE' | 'PRODUCT';
+  company_id: string;
 }
 
 export interface Professional {
@@ -69,6 +74,7 @@ export interface Professional {
   specialty: string;
   avatar?: string;
   status: 'AVAILABLE' | 'BUSY' | 'AWAY';
+  company_id: string;
 }
 
 export interface Appointment {
@@ -79,6 +85,7 @@ export interface Appointment {
   date: string;
   time: string;
   status: 'CONFIRMED' | 'PENDING' | 'CANCELLED';
+  company_id: string;
 }
 
 // Novos tipos Financeiros baseados no SQL fornecido
@@ -91,6 +98,7 @@ export interface Invoice {
   valor: number;
   data_emissao: string;
   status_fatura: InvoiceStatus;
+  company_id: string;
 }
 
 export interface PixCharge {
@@ -101,4 +109,5 @@ export interface PixCharge {
   qrcode_copia_cola: string;
   data_expiracao?: string;
   id_location_sicredi?: string;
+  company_id: string;
 }

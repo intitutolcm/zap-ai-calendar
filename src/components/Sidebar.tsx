@@ -1,6 +1,6 @@
 import React from 'react';
 import { User, UserRole } from '../types';
-import { useUnreadCount } from '@/hooks/useUnreadCount'; // Importando o hook que criamos
+import { useUnreadCount } from '@/hooks/useUnreadCount';
 
 interface SidebarProps {
   user: User;
@@ -10,7 +10,6 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ user, activeTab, setActiveTab, onLogout }) => {
-  // Hook que monitora o Supabase Realtime para mensagens não lidas
   const unreadCount = useUnreadCount();
 
   const menuItems = [
@@ -20,23 +19,25 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeTab, setActiveTab, onLogo
     { id: 'billing', label: 'Financeiro', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
     { id: 'business', label: 'Negócio', icon: 'M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z' },
     { id: 'agents', label: 'Agentes IA', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
-    { id: 'settings', label: 'Ajustes', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' },
+    { id: 'management', label: 'Gestão', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' },
+    { id: 'settings', label: 'Ajustes', icon: 'M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4' },
   ];
 
-  const rolePermissions: Record<UserRole, string[]> = {
-    admin: ['dashboard', 'conversations', 'calendar', 'billing', 'business', 'agents', 'settings'],
+  const rolePermissions: Record<string, string[]> = {
+    admin: ['dashboard', 'conversations', 'calendar', 'billing', 'business', 'agents', 'management', 'settings'],
     company: ['dashboard', 'conversations', 'calendar', 'billing', 'business', 'agents', 'settings'],
     profissional: ['conversations', 'calendar', 'business'],
     operador: ['conversations']
   };
 
-  const allowedTabs = rolePermissions[user.role] || [];
+  const userRole = user.role?.toLowerCase() || 'operador';
+  const allowedTabs = rolePermissions[userRole] || [];
   const filteredMenuItems = menuItems.filter(item => allowedTabs.includes(item.id));
 
   return (
     <div className="w-64 bg-slate-900 h-screen flex flex-col flex-shrink-0 text-slate-300">
       <div className="p-6 border-b border-slate-800 flex items-center gap-3">
-        <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/20">Z</div>
+        <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center font-bold text-white shadow-lg">Z</div>
         <span className="text-xl font-bold text-white tracking-tight">ZapAI <span className="text-indigo-400">Pro</span></span>
       </div>
       
@@ -54,16 +55,16 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeTab, setActiveTab, onLogo
             <div className="flex items-center gap-3">
               <svg className={`w-5 h-5 ${activeTab === item.id ? 'text-white' : 'text-slate-500 group-hover:text-indigo-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={item.icon} />
+                {item.id === 'management' && (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                )}
               </svg>
               <span className="font-medium text-sm">{item.label}</span>
             </div>
 
-            {/* Exibição do Badge de Mensagens Não Lidas */}
             {item.id === 'conversations' && unreadCount > 0 && (
-              <span className={`flex h-5 min-w-[1.25rem] px-1 items-center justify-center rounded-full text-[10px] font-black transition-all ${
-                activeTab === 'conversations' 
-                  ? 'bg-white text-indigo-600' 
-                  : 'bg-rose-500 text-white animate-pulse shadow-lg shadow-rose-500/20'
+              <span className={`flex h-5 min-w-[1.25rem] px-1 items-center justify-center rounded-full text-[10px] font-black ${
+                activeTab === 'conversations' ? 'bg-white text-indigo-600' : 'bg-rose-500 text-white animate-pulse'
               }`}>
                 {unreadCount > 99 ? '99+' : unreadCount}
               </span>
@@ -72,7 +73,6 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeTab, setActiveTab, onLogo
         ))}
       </nav>
 
-      {/* Identificação do Usuário */}
       <div className="px-6 py-4 bg-slate-800/50">
         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-1">Logado como</p>
         <p className="text-xs font-bold text-slate-200 truncate">{user.name}</p>
@@ -82,7 +82,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeTab, setActiveTab, onLogo
       <div className="p-4 border-t border-slate-800">
         <button 
           onClick={onLogout}
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-rose-500/10 hover:text-rose-400 text-slate-400 transition-colors group"
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-rose-500/10 hover:text-rose-400 text-slate-400 transition-colors"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />

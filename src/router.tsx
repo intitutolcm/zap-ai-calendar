@@ -9,16 +9,17 @@ import BusinessPage from '@/pages/Business';
 import BillingPage from "@/pages/Billing";
 import AgentsPage from "@/pages/AgentsPage";
 import SettingsPage from "@/pages/SettingsPage";
+import Management from './pages/Management'; // Importação da página de gestão
 import { UserRole } from '@/types';
 import { ToastType } from '@/components/Toast';
 
-// Interface para receber o showToast do App.tsx
 interface RoutesProps {
   showToast: (msg: string, type: ToastType) => void;
 }
 
-const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
-  admin: ['dashboard', 'conversations', 'calendar', 'billing', 'business', 'agents', 'settings'],
+// Mapeamento centralizado de permissões
+const ROLE_PERMISSIONS: Record<string, string[]> = {
+  admin: ['dashboard', 'conversations', 'calendar', 'billing', 'business', 'agents', 'management', 'settings'],
   company: ['dashboard', 'conversations', 'calendar', 'billing', 'business', 'agents', 'settings'],
   profissional: ['conversations', 'calendar', 'business'],
   operador: ['conversations']
@@ -28,10 +29,12 @@ const Routes: React.FC<RoutesProps> = ({ showToast }) => {
   const { user, loading, login, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
 
-  // Redirecionamento de segurança por Role
   useEffect(() => {
     if (user) {
-      const allowedTabs = ROLE_PERMISSIONS[user.role] || [];
+      // Normalizamos a role para lowercase para evitar erros de case-sensitivity vindo do banco
+      const userRole = user.role?.toLowerCase();
+      const allowedTabs = ROLE_PERMISSIONS[userRole] || [];
+      
       if (!allowedTabs.includes(activeTab)) {
         setActiveTab(allowedTabs[0] || 'conversations');
       }
@@ -51,10 +54,11 @@ const Routes: React.FC<RoutesProps> = ({ showToast }) => {
   }
 
   const renderContent = () => {
-    const allowedTabs = ROLE_PERMISSIONS[user.role] || [];
+    const userRole = user.role?.toLowerCase();
+    const allowedTabs = ROLE_PERMISSIONS[userRole] || [];
 
     if (!allowedTabs.includes(activeTab)) {
-      return <div className="flex items-center justify-center h-full text-slate-400">Acesso restrito.</div>;
+      return <div className="flex items-center justify-center h-full text-slate-400">Acesso restrito para esta conta.</div>;
     }
 
     switch (activeTab) {
@@ -64,6 +68,7 @@ const Routes: React.FC<RoutesProps> = ({ showToast }) => {
       case 'billing': return <BillingPage showToast={showToast} />;
       case 'business': return <BusinessPage showToast={showToast} />;
       case 'agents': return <AgentsPage showToast={showToast} />;
+      case 'management': return <Management showToast={showToast} />;
       case 'settings': return <SettingsPage showToast={showToast} />;
       default: return <InstancesPage showToast={showToast} />;
     }
