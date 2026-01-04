@@ -1,3 +1,4 @@
+// src/services/api.ts
 import { Instance, User } from '../types';
 import { supabase } from './supabase';
 
@@ -10,47 +11,66 @@ const headers = {
   'Content-Type': 'application/json'
 };
 
-// Função auxiliar para obter o ID da empresa de forma consistente
+/**
+ * Função auxiliar para obter o ID raiz da empresa.
+ * Se o usuário for o dono (company), o ID dele é o company_id para os outros.
+ * Se for um funcionário, ele já possui o company_id preenchido.
+ */
 const getTargetId = (user: User) => user.company_id || user.id;
 
 export const api = {
   users: {
     listProfiles: async (user: User) => {
-      if (!user) return [];
-      let query = supabase.from('users_profile').select('*');
-      if (user.role === 'admin') {
-        query = query.eq('role', 'company');
-      } else {
-        const companyId = getTargetId(user);
-        query = query.eq('company_id', companyId);
-      }
-      const { data, error } = await query.order('name', { ascending: true });    
-      if (error) {
-        console.error("Erro ao listar perfis:", error);
-        throw error;
-      }
-      return data;
-    },
+    if (!user || !user.id) return [];
+    
+    let query = supabase.from('users_profile').select('*');
+
+    if (user.role === 'admin') {
+      // O Admin vê apenas os perfis que são "empresas"
+      query = query.eq('role', 'company');
+    } else {
+      // A Empresa vê seus subordinados (quem tem o ID dela no company_id)
+      query = query.eq('company_id', user.id);
+    }
+
+    const { data, error } = await query.order('name', { ascending: true });
+    if (error) throw error;
+    return data;
+  },
+
     upsert: async (userData: any) => {
       const { data, error } = await supabase.from('users_profile').upsert(userData).select().single();
       if (error) throw error;
       return data;
     },
+
     delete: async (id: string) => {
       const { error } = await supabase.from('users_profile').delete().eq('id', id);
       if (error) throw error;
     },
+
+    /**
+     * Registra novo usuário via Edge Function.
+     * Importante: O payload deve conter o company_id correto.
+     */
     register: async (userData: any) => {
-      const { data, error } = await supabase.functions.invoke('create-user-admin', { body: userData });
+      const { data, error } = await supabase.functions.invoke('create-user-admin', { 
+        body: userData 
+      });
       if (error) throw error;
       return data;
     }
   },
 
+  
   templates: {
     listAll: async (user: User) => {
       const cid = getTargetId(user);
-      const { data, error } = await supabase.from('prompt_templates').select('*').or(`company_id.eq.${cid},is_global.eq.true`).order('name', { ascending: true });
+      const { data, error } = await supabase
+        .from('prompt_templates')
+        .select('*')
+        .or(`company_id.eq.${cid},is_global.eq.true`)
+        .order('name', { ascending: true });
       if (error) throw error;
       return data;
     },
@@ -60,6 +80,7 @@ export const api = {
       return data;
     }
   },
+
 
   instances: {
     list: async (user: User): Promise<Instance[]> => {
@@ -91,7 +112,6 @@ export const api = {
     },
     create: async (name: string, user: User) => {
       const companyId = getTargetId(user);
-      const { data: settings } = await supabase.from('settings').select('webhook_url').eq('company_id', companyId).maybeSingle();
       const body = {
         instanceName: name,
         integration: "WHATSAPP-BAILEYS",
@@ -100,7 +120,11 @@ export const api = {
       const response = await fetch(`${EVO_URL}/instance/create`, { method: 'POST', headers, body: JSON.stringify(body) });
       if (!response.ok) throw new Error('Erro na Evolution API');
       const evoData = await response.json();
-      const { error } = await supabase.from('instances').insert({ name, token: evoData.hash || evoData.instance?.hash, company_id: companyId });
+      const { error } = await supabase.from('instances').insert({ 
+        name, 
+        token: evoData.hash || evoData.instance?.hash, 
+        company_id: companyId 
+      });
       if (error) throw error;
     },
     connect: async (instanceName: string) => {
@@ -113,6 +137,19 @@ export const api = {
     delete: async (name: string) => {
       await fetch(`${EVO_URL}/instance/delete/${name}`, { method: 'DELETE', headers });
       await supabase.from('instances').delete().eq('name', name);
+    },
+    checkStatus: async (instanceName: string) => {
+      try {
+        const response = await fetch(`${EVO_URL}/instance/connectionState/${instanceName}`, { headers });
+        if (!response.ok) return 'close';
+        
+        const data = await response.json();
+        // A Evolution API retorna o estado dentro de data.instance.state
+        return data.instance?.state || 'close'; 
+      } catch (error) {
+        console.error("Erro ao checar status da instância:", error);
+        return 'close';
+      }
     },
     updateAgent: async (name: string, agentId: string | null) => {
       await supabase.from('instances').update({ agent_id: agentId || null }).eq('name', name);
@@ -136,7 +173,7 @@ export const api = {
         business_hours_end: updates.businessHoursEnd,
         working_days: updates.workingDays, 
         address: updates.address,           
-        website: updates.website,          
+        website: updates.website,           
         instagram: updates.instagram,       
         offline_message: updates.offlineMessage,
         updated_at: new Date().toISOString()
@@ -148,12 +185,30 @@ export const api = {
 
   conversations: {
     list: async (user: User) => {
-      const { data, error } = await supabase
+      if (!user || !user.id) return [];
+
+      let query = supabase
         .from('conversations')
-        .select('*, contacts!inner(*), instances!inner(*)')
-        .eq('instances.company_id', getTargetId(user))
+        .select(`
+          *,
+          contacts!inner(*),
+          instances!inner(*)
+        `)
         .order('last_timestamp', { ascending: false });
-      if (error) throw error;
+
+      // LÓGICA DE FILTRO POR CARGO
+      if (user.role !== 'admin') {
+        // Se não for admin, ele só vê o que pertence ao seu "clã"
+        const cid = user.company_id || user.id;
+        query = query.eq('instances.company_id', cid);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error("Erro na query de conversas:", error.message);
+        throw error;
+      }
       return data;
     },
     getUnreadCount: async (user: User) => {
@@ -214,17 +269,14 @@ export const api = {
         professional_id: data.professionalId,
         appointment_date: data.date,
         appointment_time: data.time,
-        company_id: getTargetId(user), // Injeção obrigatória para isolação
+        company_id: getTargetId(user),
         status: 'PENDING'
       });
       if (error) throw error;
     },
 
     updateStatus: async (id: string, status: string) => {
-      const { error } = await supabase
-        .from('appointments')
-        .update({ status })
-        .eq('id', id);
+      const { error } = await supabase.from('appointments').update({ status }).eq('id', id);
       if (error) throw error;
     }
   },
@@ -266,35 +318,26 @@ export const api = {
       return stats;
     },
     getPixCharge: async (faturaId: string) => {
-    const { data, error } = await supabase
-      .from('pix_charges')
-      .select('*')
-      .eq('invoice_id', faturaId)
-      .maybeSingle();
-    if (error) throw error;
-    return data;
+      const { data, error } = await supabase
+        .from('pix_charges')
+        .select('*')
+        .eq('invoice_id', faturaId)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
     },
   },
 
-agents: {
-    /**
-     * Lista todos os agentes da empresa com seus respectivos vínculos
-     */
+  agents: {
     list: async (user: any) => {
       const { data, error } = await supabase
         .from('agents')
-        .select(`
-          *,
-          agent_tools (
-            tool_id
-          )
-        `)
-        .eq('company_id', user.company_id || user.id)
+        .select('*, agent_tools ( tool_id )')
+        .eq('company_id', getTargetId(user))
         .order('created_at', { ascending: false });
 
       if (error) throw error;
 
-      // Mapeamento para CamelCase para manter o padrão do seu Frontend
       return data.map(a => ({
         id: a.id,
         name: a.name,
@@ -304,14 +347,9 @@ agents: {
         isMultiAgent: a.is_multi_agent,
         parentAgentId: a.parent_agent_id,
         company_id: a.company_id,
-        // Transforma a lista de objetos de ferramentas em um array simples de IDs
         selectedTools: a.agent_tools?.map((t: any) => t.tool_id) || []
       }));
     },
-
-    /**
-     * Salva ou Atualiza um Agente e gerencia suas flags de Multi-Agente
-     */
     save: async (agent: any, user: any) => {
       const payload = {
         name: agent.name,
@@ -319,62 +357,30 @@ agents: {
         enable_audio: agent.enableAudio,
         enable_image: agent.enableImage,
         is_multi_agent: agent.isMultiAgent,
-        // Se for principal, o pai deve ser nulo obrigatoriamente
         parent_agent_id: agent.isMultiAgent ? null : agent.parentAgentId,
-        company_id: user.company_id || user.id
+        company_id: getTargetId(user)
       };
 
-      let result;
+      const query = agent.id 
+        ? supabase.from('agents').update(payload).eq('id', agent.id)
+        : supabase.from('agents').insert(payload);
 
-      if (agent.id) {
-        // Update
-        const { data, error } = await supabase
-          .from('agents')
-          .update(payload)
-          .eq('id', agent.id)
-          .select()
-          .single();
-        
-        if (error) throw error;
-        result = data;
-      } else {
-        // Insert
-        const { data, error } = await supabase
-          .from('agents')
-          .insert(payload)
-          .select()
-          .single();
-        
-        if (error) throw error;
-        result = data;
-      }
-
-      return result;
+      const { data, error } = await query.select().single();
+      if (error) throw error;
+      return data;
     },
-
-    /**
-     * Remove um agente (o banco cuidará de remover os vínculos em agent_tools via CASCADE)
-     */
     delete: async (id: string) => {
-      const { error } = await supabase
-        .from('agents')
-        .delete()
-        .eq('id', id);
-      
+      const { error } = await supabase.from('agents').delete().eq('id', id);
       if (error) throw error;
     }
   },
 
   tools: {
-    /**
-     * Lista todas as ferramentas (functions) disponíveis no sistema
-     */
     listAll: async () => {
       const { data, error } = await supabase
         .from('tools')
         .select('*')
         .order('name', { ascending: true });
-
       if (error) throw error;
       return data;
     }

@@ -142,12 +142,12 @@ ${editingAgent.pacif.formato}
 
     setSelectedTools(currentTools);
     setEditingAgent({
-      ...agent,
-      targetInstance: instanceName,
-      is_multi_agent: (agent as any).isMultiAgent ?? false, 
-      parent_agent_id: (agent as any).parentAgentId ?? null,
-      pacif: pacifData
-    });
+    ...agent,
+    targetInstance: instanceName || '',
+    is_multi_agent: Boolean((agent as any).is_multi_agent || (agent as any).isMultiAgent), 
+    parent_agent_id: (agent as any).parent_agent_id || (agent as any).parentAgentId || null,
+    pacif: pacifData
+  });
   };
 
   const handleApplyTemplate = (templateId: string) => {
@@ -222,18 +222,23 @@ ${editingAgent.pacif.formato}
               {/* TOP SWITCH: MULTI AGENT FLAG */}
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
                 <div className="p-4 bg-indigo-50 rounded-3xl border border-indigo-100 flex items-center gap-4">
-                  <div className="relative inline-flex items-center cursor-pointer">
+                  {/* MUDANÇA AQUI: de div para label */}
+                  <label className="relative inline-flex items-center cursor-pointer">
                     <input 
                       type="checkbox" 
-                      checked={editingAgent.is_multi_agent} 
+                      checked={!!editingAgent.is_multi_agent} // Garante valor booleano
                       onChange={e => setEditingAgent({...editingAgent, is_multi_agent: e.target.checked})} 
                       className="sr-only peer"
                     />
                     <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                  </div>
-                  <span className="text-sm font-black text-indigo-700 uppercase tracking-tighter">Este é um Agente Principal (Router)</span>
+                  </label>
+                  <span className="text-sm font-black text-indigo-700 uppercase tracking-tighter cursor-pointer select-none">
+                    Este é um Agente Principal (Router)
+                  </span>
                 </div>
-                <button onClick={() => setEditingAgent(null)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors self-end md:self-auto"><svg className="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" strokeWidth="2"/></svg></button>
+                <button onClick={() => setEditingAgent(null)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors self-end md:self-auto">
+                  <svg className="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" strokeWidth="2"/></svg>
+                </button>
               </div>
 
               {/* HIERARQUIA E TEMPLATE */}

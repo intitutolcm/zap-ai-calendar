@@ -25,9 +25,9 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeTab, setActiveTab, onLogo
 
   const rolePermissions: Record<string, string[]> = {
     admin: ['dashboard', 'conversations', 'calendar', 'billing', 'business', 'agents', 'management', 'settings'],
-    company: ['dashboard', 'conversations', 'calendar', 'billing', 'business', 'agents', 'settings'],
-    profissional: ['conversations', 'calendar', 'business'],
-    operador: ['conversations']
+    company: ['dashboard', 'conversations', 'calendar', 'billing', 'business', 'agents', 'management', 'settings'],
+    profissional: ['conversations', 'calendar'],
+    operador: ['conversations', 'calendar', 'billing', 'business', 'agents']
   };
 
   const userRole = user.role?.toLowerCase() || 'operador';

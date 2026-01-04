@@ -9,7 +9,7 @@ import BusinessPage from '@/pages/Business';
 import BillingPage from "@/pages/Billing";
 import AgentsPage from "@/pages/AgentsPage";
 import SettingsPage from "@/pages/SettingsPage";
-import Management from './pages/Management'; // Importação da página de gestão
+import Management from './pages/Management';
 import { UserRole } from '@/types';
 import { ToastType } from '@/components/Toast';
 
@@ -20,9 +20,9 @@ interface RoutesProps {
 // Mapeamento centralizado de permissões
 const ROLE_PERMISSIONS: Record<string, string[]> = {
   admin: ['dashboard', 'conversations', 'calendar', 'billing', 'business', 'agents', 'management', 'settings'],
-  company: ['dashboard', 'conversations', 'calendar', 'billing', 'business', 'agents', 'settings'],
-  profissional: ['conversations', 'calendar', 'business'],
-  operador: ['conversations']
+  company: ['dashboard', 'conversations', 'calendar', 'billing', 'business', 'agents', 'management', 'settings'],
+  profissional: ['conversations', 'calendar'],
+  operador: ['conversations', 'calendar', 'billing', 'business', 'agents']
 };
 
 const Routes: React.FC<RoutesProps> = ({ showToast }) => {

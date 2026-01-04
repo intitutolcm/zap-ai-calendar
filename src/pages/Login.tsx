@@ -18,20 +18,16 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin, showToast }) => {
   e.preventDefault();
   setIsLoading(true);
   
-  // Alterado para o método oficial: signInWithPassword
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   
   if (error) {
     showToast(error.message, 'error');
   } else if (data.user) {
-    // Mapeia o utilizador do Supabase para o seu tipo interno 'User'
-    onLogin({
+    // Agora aguardamos a busca do perfil completo no useAuth
+    await onLogin({
       id: data.user.id,
       email: data.user.email || '',
-      name: data.user.user_metadata?.full_name || data.user.email?.split('@')[0] || 'Utilizador',
+      name: data.user.user_metadata?.full_name || data.user.email?.split('@')[0] || 'Usuário',
     });
   }
   setIsLoading(false);

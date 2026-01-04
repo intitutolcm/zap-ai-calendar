@@ -1,5 +1,4 @@
-// No ficheiro src/hooks/useAuth.ts
-
+// src/hooks/useAuth.ts
 import { useState, useEffect } from 'react';
 import { User, UserRole } from '../types';
 import { supabase } from '../services/supabase';
@@ -8,44 +7,44 @@ export const useAuth = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Função interna para buscar o perfil completo
+  const fetchProfile = async (basicUser: any) => {
+    const { data: profile, error } = await supabase
+      .from('users_profile')
+      .select('role, company_id, name')
+      .eq('id', basicUser.id)
+      .single();
+
+    if (!error && profile) {
+      return { 
+        ...basicUser, 
+        name: profile.name || basicUser.name,
+        role: profile.role as UserRole,
+        company_id: profile.company_id 
+      };
+    }
+    return basicUser;
+  };
+
   useEffect(() => {
-    const fetchUserAndProfile = async () => {
+    const initAuth = async () => {
       const saved = localStorage.getItem('zap_user');
-      if (!saved) {
-        setLoading(false);
-        return;
-      }
-
-      const basicUser = JSON.parse(saved);
-
-      // Procura o perfil completo (Role e Empresa) no banco de dados
-      const { data: profile, error } = await supabase
-        .from('users_profile')
-        .select('role, company_id')
-        .eq('id', basicUser.id)
-        .single();
-
-      if (!error && profile) {
-        const fullUser: User = { 
-          ...basicUser, 
-          role: profile.role as UserRole,
-          company_id: profile.company_id 
-        };
+      if (saved) {
+        const fullUser = await fetchProfile(JSON.parse(saved));
         setUser(fullUser);
-        localStorage.setItem('zap_user', JSON.stringify(fullUser));
-      } else {
-        setUser(basicUser); // Fallback caso não encontre perfil
       }
-      
       setLoading(false);
     };
-
-    fetchUserAndProfile();
+    initAuth();
   }, []);
 
-  const login = (userData: User) => {
-    setUser(userData);
-    localStorage.setItem('zap_user', JSON.stringify(userData));
+  const login = async (userData: User) => {
+    setLoading(true);
+    // Busca o perfil imediatamente no login para evitar a página bloqueada
+    const fullUser = await fetchProfile(userData);
+    setUser(fullUser);
+    localStorage.setItem('zap_user', JSON.stringify(fullUser));
+    setLoading(false);
   };
 
   const logout = async () => {
