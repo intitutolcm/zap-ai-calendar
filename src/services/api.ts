@@ -389,27 +389,29 @@ export const api = {
   /* ================= APPOINTMENTS ================= */
   appointments: {
     list: async (user: User) => {
-      const cid = getTargetId(user);
-      const { data, error } = await supabase
-        .from('appointments')
-        .select('*, contacts(id,name,cpf), services(id,name,price), professionals(id,name)')
-        .eq('company_id', cid)
-        .order('appointment_date');
+    const cid = getTargetId(user);
+    const { data, error } = await supabase
+      .from('appointments')
+      .select('*, contacts(id,name,cpf), services(id,name,price), professionals(id,name)')
+      .eq('company_id', cid)
+      .order('appointment_date');
 
-      if (error) throw error;
-      return (data || []).map((ap) => ({
-        ...ap,
-        contactId: ap.contact_id,
-        serviceId: ap.service_id,
-        professionalId: ap.professional_id,
-        date: ap.appointment_date,
-        time: ap.appointment_time,
-        contactName: ap.contacts?.name || 'Cliente',
-        serviceName: ap.services?.name || 'Serviço',
-        professionalName: ap.professionals?.name || 'Profissional',
-        price: ap.services?.price || 0,
-      }));
-    },
+    if (error) throw error;
+    
+    return (data || []).map((ap) => ({
+      ...ap,
+      contactId: ap.contact_id,
+      serviceId: ap.service_id,
+      professionalId: ap.professional_id,
+      date: ap.appointment_date,
+      time: ap.appointment_time,
+      contactName: ap.contacts?.name || 'Cliente',
+      contactCpf: ap.contacts?.cpf || '', 
+      serviceName: ap.services?.name || 'Serviço',
+      professionalName: ap.professionals?.name || 'Profissional',
+      price: ap.services?.price || 0,
+    }));
+  },
 
     save: async (formData: any, user: User, editingId: string | null) => {
     const payload = {
