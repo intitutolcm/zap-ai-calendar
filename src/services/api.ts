@@ -718,7 +718,7 @@ export const api = {
     }
 
     // 2. Chama a Edge Function Proxy (em vez do n8n direto)
-    const { data, error: functionError } = await supabase.functions.invoke('sicredi-pix-proxy', {
+    const { data, error: functionError } = await supabase.functions.invoke('n8n-proxy', {
       body: {
         appointment_id: apt.id,
         contact_id: apt.contact_id || apt.contactId,
