@@ -43,6 +43,25 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ showToast }) => {
     }
   }, [user]);
 
+  const handleConnectGoogle = () => {
+  const rootUrl = 'https://accounts.google.com/o/oauth2/v2/auth';
+  const options = {
+    redirect_uri: import.meta.env.VITE_GOOGLE_REDIRECT_URI,
+    client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+    access_type: 'offline', // Importante para receber o Refresh Token
+    response_type: 'code',
+    prompt: 'consent',
+    scope: [
+      'https://www.googleapis.com/auth/calendar.events',
+      'https://www.googleapis.com/auth/calendar.readonly'
+    ].join(' '),
+    state: user?.id // Passamos o ID do usuário para saber quem está conectando no retorno
+  };
+
+  const qs = new URLSearchParams(options).toString();
+  window.location.href = `${rootUrl}?${qs}`;
+};
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -174,6 +193,26 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ showToast }) => {
             </div>
           </div>
 
+          {/* Seção Google Calendar */}
+          <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm mt-8">
+            <div className="flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <img src="https://upload.wikimedia.org/wikipedia/commons/a/a5/Google_Calendar_icon_%282020%29.svg" className="w-5 h-5" alt="Google" />
+                  Google Calendar
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">Sincronize seus agendamentos com sua agenda pessoal.</p>
+              </div>
+              <button 
+                type="button"
+                onClick={handleConnectGoogle}
+                className="px-6 py-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-2xl font-bold transition-all flex items-center gap-2"
+              >
+                Conectar Agenda
+              </button>
+            </div>
+          </div>
+          
           {/* Sessão 3: Automação */}
           <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
             <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">

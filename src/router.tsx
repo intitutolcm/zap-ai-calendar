@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { Routes as RouterRoutes, Route, Navigate } from 'react-router-dom'; // Renomeado para evitar conflito
 import { useAuth } from '@/hooks/useAuth';
 import Layout from "./lib/layout";
+
+// Páginas
 import LoginPage from '@/pages/Login';
 import InstancesPage from '@/pages/Instances';
 import ConversationsPage from '@/pages/Conversations';
@@ -10,7 +13,8 @@ import BillingPage from "@/pages/Billing";
 import AgentsPage from "@/pages/AgentsPage";
 import SettingsPage from "@/pages/SettingsPage";
 import Management from './pages/Management';
-import { UserRole } from '@/types';
+import GoogleCallback from '@/pages/GoogleCallback'; // Importe a página que criamos
+
 import { ToastType } from '@/components/Toast';
 
 interface RoutesProps {
@@ -31,7 +35,6 @@ const Routes: React.FC<RoutesProps> = ({ showToast }) => {
 
   useEffect(() => {
     if (user) {
-      // Normalizamos a role para lowercase para evitar erros de case-sensitivity vindo do banco
       const userRole = user.role?.toLowerCase();
       const allowedTabs = ROLE_PERMISSIONS[userRole] || [];
       
@@ -49,16 +52,17 @@ const Routes: React.FC<RoutesProps> = ({ showToast }) => {
     );
   }
 
-  if (!user) {
+  // Se não estiver logado e NÃO for a rota do Google, mostra login
+  if (!user && window.location.pathname !== '/google-callback') {
     return <LoginPage onLogin={login} showToast={showToast} />;
   }
 
-  const renderContent = () => {
-    const userRole = user.role?.toLowerCase();
+  const renderTabContent = () => {
+    const userRole = user?.role?.toLowerCase() || '';
     const allowedTabs = ROLE_PERMISSIONS[userRole] || [];
 
     if (!allowedTabs.includes(activeTab)) {
-      return <div className="flex items-center justify-center h-full text-slate-400">Acesso restrito para esta conta.</div>;
+      return <div className="flex items-center justify-center h-full text-slate-400">Acesso restrito.</div>;
     }
 
     switch (activeTab) {
@@ -75,14 +79,32 @@ const Routes: React.FC<RoutesProps> = ({ showToast }) => {
   };
 
   return (
-    <Layout 
-      user={user} 
-      activeTab={activeTab} 
-      setActiveTab={setActiveTab} 
-      onLogout={logout}
-    >
-      {renderContent()}
-    </Layout>
+    <RouterRoutes>
+      {/* Rota especial do Google - Renderiza SEM o Layout */}
+      <Route 
+        path="/google-callback" 
+        element={<GoogleCallback showToast={showToast} />} 
+      />
+
+      {/* Rota principal do App - Renderiza COM o Layout */}
+      <Route 
+        path="*" 
+        element={
+          user ? (
+            <Layout 
+              user={user} 
+              activeTab={activeTab} 
+              setActiveTab={setActiveTab} 
+              onLogout={logout}
+            >
+              {renderTabContent()}
+            </Layout>
+          ) : (
+            <Navigate to="/" replace />
+          )
+        } 
+      />
+    </RouterRoutes>
   );
 };
 

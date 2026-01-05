@@ -22,11 +22,7 @@ const ConversationsPage: React.FC<ConversationsProps> = ({ showToast }) => {
     if (!user?.id) return;
     try {
       setIsLoading(true);
-      const data = await api.conversations.list(user);
-      console.log("Conversas carregadas da API:", data);
-      console.log("Meu ID de usuário:", user?.id);
-      console.log("Meu Company ID:", user?.company_id);
-      console.log("O que estou usando como filtro (CID):", user?.company_id || user?.id);
+      const data = await api.conversations.list(user);      
       setConversations(data || []);
       
       if (selectedChat) {
@@ -112,10 +108,14 @@ const ConversationsPage: React.FC<ConversationsProps> = ({ showToast }) => {
     }
   };
 
-  return (
-    <div className="flex h-full overflow-hidden bg-white">
-      {/* Sidebar Lateral */}
-      <div className="w-80 sm:w-96 bg-white border-r border-slate-200 flex flex-col shrink-0">
+return (
+    <div className="flex h-full overflow-hidden bg-white relative">
+      
+      {/* Sidebar Lateral - Oculta no mobile quando chat está aberto */}
+      <div className={`
+        ${selectedChat ? 'hidden md:flex' : 'flex'} 
+        w-full md:w-80 lg:w-96 bg-white border-r border-slate-200 flex-col shrink-0
+      `}>
         <div className="p-6 border-b border-slate-100 flex justify-between items-center">
           <h2 className="text-xl font-bold text-slate-900">Conversas</h2>
           {isLoading && <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>}
@@ -134,8 +134,7 @@ const ConversationsPage: React.FC<ConversationsProps> = ({ showToast }) => {
                 selectedChat?.id === chatItem.id ? 'bg-indigo-600 text-white shadow-lg' : 'hover:bg-slate-50 text-slate-600'
               }`}
             >
-               {/* Identidade Visual */}
-               <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold shrink-0 ${
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold shrink-0 ${
                 selectedChat?.id === chatItem.id ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-600'
               }`}>
                 {chatItem.contacts?.name?.charAt(0) || '?'}
@@ -161,48 +160,54 @@ const ConversationsPage: React.FC<ConversationsProps> = ({ showToast }) => {
         </div>
       </div>
 
-      {/* Janela de Chat */}
-      <div className="flex-1 flex flex-col bg-slate-50/50">
+      {/* Janela de Chat - Ocupa tela cheia no mobile se selecionado */}
+      <div className={`
+        ${selectedChat ? 'flex' : 'hidden md:flex'} 
+        flex-1 flex flex-col bg-slate-50/50
+      `}>
         {selectedChat ? (
           <>
-            <div className="p-5 bg-white border-b border-slate-200 flex justify-between items-center shadow-sm z-10">
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 bg-indigo-100 rounded-2xl flex items-center justify-center font-bold text-indigo-600">
+            <div className="p-4 md:p-5 bg-white border-b border-slate-200 flex justify-between items-center shadow-sm z-10">
+              <div className="flex items-center gap-3 md:gap-4">
+                
+                {/* BOTÃO VOLTAR (Apenas Mobile) */}
+                <button 
+                  onClick={() => setSelectedChat(null)}
+                  className="md:hidden p-2 -ml-2 text-slate-400 hover:text-indigo-600"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+
+                <div className="w-10 h-10 bg-indigo-100 rounded-2xl flex items-center justify-center font-bold text-indigo-600 shrink-0">
                   {selectedChat.contacts?.name?.charAt(0) || '?'}
                 </div>
-                <div>
-                  <h3 className="font-bold text-slate-900 leading-none mb-1.5">{selectedChat.contacts?.name}</h3>
+                <div className="min-w-0">
+                  <h3 className="font-bold text-slate-900 leading-none mb-1 truncate">{selectedChat.contacts?.name}</h3>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      {selectedChat.is_human_active ? '● Atendimento Humano' : '● IA Ativa'}
-                    </span>
-                    
-                    {/* IDENTIFICAÇÃO DA INSTÂNCIA NO CABEÇALHO */}
-                    <span className="text-[10px] font-black text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded uppercase">
-                      Via: {selectedChat.instances?.name}
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 whitespace-nowrap">
+                      {selectedChat.is_human_active ? '● Humano' : '● IA'}
                     </span>
                   </div>
                 </div>
               </div>
               
-              {selectedChat.is_human_active ? (
+              <div className="flex items-center gap-2">
                 <button 
-                  onClick={() => toggleAIStatus(false)} 
-                  className="px-4 py-2 bg-indigo-100 text-indigo-600 rounded-xl text-xs font-bold hover:bg-indigo-200 transition-all"
+                  onClick={() => toggleAIStatus(!selectedChat.is_human_active)} 
+                  className={`px-3 py-2 rounded-xl text-[10px] md:text-xs font-bold transition-all ${
+                    selectedChat.is_human_active 
+                    ? 'bg-indigo-100 text-indigo-600' 
+                    : 'bg-slate-900 text-white'
+                  }`}
                 >
-                  Reativar IA
+                  {selectedChat.is_human_active ? 'Reativar IA' : 'Assumir'}
                 </button>
-              ) : (
-                <button 
-                  onClick={() => toggleAIStatus(true)} 
-                  className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all"
-                >
-                  Assumir Chat
-                </button>
-              )}
+              </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-4 md:p-6 flex flex-col gap-4 custom-scrollbar">
               {messages.map(m => (
                 <MessageBubble 
                   key={m.id} 
@@ -216,20 +221,20 @@ const ConversationsPage: React.FC<ConversationsProps> = ({ showToast }) => {
               <div ref={chatEndRef} />
             </div>
 
-            <div className="p-6 bg-white border-t border-slate-200">
+            <div className="p-4 md:p-6 bg-white border-t border-slate-200">
               <form onSubmit={handleSend} className="flex items-center gap-3">
                 <input
                   value={newMessage}
                   onChange={e => setNewMessage(e.target.value)}
-                  className="flex-1 bg-slate-50 px-6 py-4 rounded-2xl text-sm outline-none border border-transparent focus:border-indigo-500 focus:bg-white transition-all font-medium"
-                  placeholder={selectedChat.is_human_active ? "Responda como humano..." : "IA está respondendo... (Assuma para digitar)"}
+                  className="flex-1 bg-slate-50 px-4 md:px-6 py-3 md:py-4 rounded-2xl text-sm outline-none border border-transparent focus:border-indigo-500 focus:bg-white transition-all"
+                  placeholder={selectedChat.is_human_active ? "Digite sua mensagem..." : "Assuma para responder"}
                 />
                 <button 
                   type="submit"
                   disabled={!newMessage.trim()} 
-                  className="p-4 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-700 disabled:opacity-50 transition-all shadow-lg"
+                  className="p-3 md:p-4 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-700 disabled:opacity-50 shadow-lg shrink-0"
                 >
-                  <svg className="w-6 h-6 rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 md:w-6 md:h-6 rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                   </svg>
                 </button>
@@ -237,13 +242,14 @@ const ConversationsPage: React.FC<ConversationsProps> = ({ showToast }) => {
             </div>
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center">
+          /* Empty State (Apenas Desktop) */
+          <div className="hidden md:flex flex-1 flex-col items-center justify-center">
             <div className="w-20 h-20 bg-slate-100 rounded-[2rem] flex items-center justify-center text-slate-300 mb-4">
               <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8s-9-3.582-9-8z" />
               </svg>
             </div>
-            <p className="text-slate-400 font-bold">Selecione uma conversa para começar</p>
+            <p className="text-slate-400 font-bold">Selecione uma conversa</p>
           </div>
         )}
       </div>
