@@ -7,7 +7,7 @@ export const useAuth = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Função interna para buscar o perfil completo - teste
+  // Função interna para buscar o perfil completo - teste 2
   const fetchProfile = async (basicUser: any) => {
     const { data: profile, error } = await supabase
       .from('users_profile')
