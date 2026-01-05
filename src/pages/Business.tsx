@@ -193,9 +193,18 @@ const BusinessPage: React.FC<BusinessPageProps> = ({ showToast }) => {
                     {/* Só mostra duração se for serviço */}
                     {activeSubTab === 'services' && (
                       <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-400 uppercase">Duração</label>
-                        <select value={itemForm.duration_minutes} className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-none outline-none focus:ring-2 focus:ring-indigo-500 font-medium" onChange={e => setItemForm({...itemForm, duration_minutes: parseInt(e.target.value)})}>
-                          <option value="15">15 min</option><option value="30">30 min</option><option value="60">1 hora</option><option value="90">1h 30min</option>
+                        <label className="text-xs font-bold text-slate-400 uppercase">Duração Estimada</label>
+                        <select 
+                          value={itemForm.duration_minutes} 
+                          className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-none outline-none focus:ring-2 focus:ring-indigo-500 font-medium" 
+                          onChange={e => setItemForm({...itemForm, duration_minutes: parseInt(e.target.value)})}
+                        >
+                          <option value="15">15 minutos</option>
+                          <option value="30">30 minutos</option>
+                          <option value="45">45 minutos</option>
+                          <option value="60">1 hora</option>
+                          <option value="90">1h 30min</option>
+                          <option value="120">2 horas</option>
                         </select>
                       </div>
                     )}

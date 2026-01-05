@@ -107,6 +107,7 @@ const BillingPage: React.FC<BillingPageProps> = ({ showToast }) => {
     } catch (e) { showToast('Erro ao excluir', 'error'); }
   };
 
+  // --- LÓGICA DE FILTROS E CONTAGEM ---
   const appointmentsToBill = useMemo(() => appointments.filter(apt => !invoices.some(inv => inv.appointment_id === apt.id) && apt.status !== 'CANCELLED'), [appointments, invoices]);
   const filteredInvoices = useMemo(() => invoices.filter(inv => (inv.contacts?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) && (statusFilter === 'ALL' || inv.status_fatura === statusFilter)), [invoices, searchTerm, statusFilter]);
   const currentInvoices = filteredInvoices.slice((invPage - 1) * itemsPerPage, invPage * itemsPerPage);
@@ -124,7 +125,7 @@ const BillingPage: React.FC<BillingPageProps> = ({ showToast }) => {
     <div className="p-4 md:p-8 h-full overflow-y-auto custom-scrollbar bg-slate-50/50">
       <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight mb-6 md:mb-8">Painel Financeiro</h1>
 
-      {/* 1. CARDS DE RESUMO - Grid Responsivo */}
+      {/* 1. CARDS DE RESUMO */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-8">
         <div className="bg-indigo-600 p-5 md:p-6 rounded-[2rem] shadow-lg text-white">
           <p className="text-[10px] font-bold opacity-80 uppercase tracking-widest mb-1">A Faturar (Agenda)</p>
@@ -140,7 +141,7 @@ const BillingPage: React.FC<BillingPageProps> = ({ showToast }) => {
         </div>
       </div>
 
-      {/* 2. GRÁFICO - Responsivo */}
+      {/* 2. GRÁFICO */}
       <div className="bg-white border border-slate-200 rounded-[2rem] md:rounded-[2.5rem] p-4 md:p-8 shadow-sm mb-8">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-2">
           <div>
@@ -174,11 +175,27 @@ const BillingPage: React.FC<BillingPageProps> = ({ showToast }) => {
         </div>
       </div>
 
-      {/* 3. FILTROS - Flex Wrap para Mobile */}
+      {/* 3. FILTROS E SUB-TABS COM QUANTITATIVOS */}
       <div className="bg-white p-4 md:p-5 rounded-[2rem] border border-slate-200 shadow-sm mb-6 flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
         <div className="flex bg-slate-100 p-1 rounded-2xl w-full lg:w-fit">
-          <button onClick={() => setActiveSubTab('invoices')} className={`flex-1 lg:flex-none px-4 md:px-6 py-2 rounded-xl text-xs md:text-sm font-bold transition-all ${activeSubTab === 'invoices' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Faturas</button>
-          <button onClick={() => setActiveSubTab('pending_billing')} className={`flex-1 lg:flex-none px-4 md:px-6 py-2 rounded-xl text-xs md:text-sm font-bold transition-all ${activeSubTab === 'pending_billing' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Aguardando</button>
+          <button 
+            onClick={() => setActiveSubTab('invoices')} 
+            className={`flex-1 lg:flex-none px-4 md:px-6 py-2 rounded-xl text-xs md:text-sm font-bold transition-all flex items-center justify-center gap-2 ${activeSubTab === 'invoices' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+          >
+            Faturas
+            <span className={`px-2 py-0.5 rounded-md text-[10px] ${activeSubTab === 'invoices' ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}>
+              {invoices.length}
+            </span>
+          </button>
+          <button 
+            onClick={() => setActiveSubTab('pending_billing')} 
+            className={`flex-1 lg:flex-none px-4 md:px-6 py-2 rounded-xl text-xs md:text-sm font-bold transition-all flex items-center justify-center gap-2 ${activeSubTab === 'pending_billing' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+          >
+            Aguardando
+            <span className={`px-2 py-0.5 rounded-md text-[10px] ${activeSubTab === 'pending_billing' ? 'bg-amber-100 text-amber-600' : 'bg-slate-200 text-slate-500'}`}>
+              {appointmentsToBill.length}
+            </span>
+          </button>
         </div>
         <div className="flex flex-col sm:flex-row gap-3 flex-1 lg:max-w-xl">
           <input type="text" placeholder="Nome do cliente..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="flex-1 px-5 py-2.5 bg-slate-50 border-none rounded-2xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
@@ -189,7 +206,7 @@ const BillingPage: React.FC<BillingPageProps> = ({ showToast }) => {
         </div>
       </div>
 
-      {/* 4. TABELA COM SCROLL HORIZONTAL */}
+      {/* 4. TABELA */}
       <div className="bg-white border border-slate-200 rounded-[2rem] md:rounded-[2.5rem] shadow-sm overflow-hidden mb-10">
         <div className="overflow-x-auto custom-scrollbar">
           <table className="w-full text-left min-w-[700px]">
@@ -203,49 +220,59 @@ const BillingPage: React.FC<BillingPageProps> = ({ showToast }) => {
             </thead>
             <tbody className="divide-y divide-slate-50 text-sm">
               {activeSubTab === 'invoices' ? (
-                currentInvoices.map(inv => (
-                  <tr key={inv.id} className="hover:bg-slate-50/30 transition-colors">
-                    <td className="px-6 md:px-8 py-4 md:py-6 font-bold text-slate-900">{inv.contacts?.name || 'Cliente'}</td>
-                    <td className="px-6 md:px-8 py-4 md:py-6 font-black text-slate-900">R$ {Number(inv.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                    <td className="px-6 md:px-8 py-4 md:py-6">
-                      <select value={inv.status_fatura} onChange={(e) => handleStatusChange(inv.id, e.target.value)} className={`text-[9px] md:text-[10px] font-black uppercase px-2 md:px-3 py-1.5 rounded-xl border-none ring-1 ring-inset ${inv.status_fatura === 'Paga' ? 'bg-emerald-50 text-emerald-600 ring-emerald-100' : 'bg-amber-50 text-amber-600 ring-amber-100'}`}>
-                        {STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                      </select>
-                    </td>
-                    <td className="px-6 md:px-8 py-4 md:py-6 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button onClick={() => setSurchargeModal({id: inv.id, valor: Number(inv.valor)})} className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-indigo-600 hover:text-white transition-all"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 6v6m0 0v6m0-6h6m-6 0H6" strokeWidth="2" /></svg></button>
-                        <button onClick={() => setDeleteModal({invoiceId: inv.id, appointmentId: (inv as any).appointment_id})} className="p-2 bg-rose-50 text-rose-500 rounded-lg hover:bg-rose-600 hover:text-white transition-all"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6" strokeWidth="2" /></svg></button>
-                        <button onClick={() => handleViewPix(inv)} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-600 hover:text-white transition-all"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3" strokeWidth="2" /></svg></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                currentInvoices.length > 0 ? (
+                  currentInvoices.map(inv => (
+                    <tr key={inv.id} className="hover:bg-slate-50/30 transition-colors">
+                      <td className="px-6 md:px-8 py-4 md:py-6 font-bold text-slate-900">{inv.contacts?.name || 'Cliente'}</td>
+                      <td className="px-6 md:px-8 py-4 md:py-6 font-black text-slate-900">R$ {Number(inv.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                      <td className="px-6 md:px-8 py-4 md:py-6">
+                        <select value={inv.status_fatura} onChange={(e) => handleStatusChange(inv.id, e.target.value)} className={`text-[9px] md:text-[10px] font-black uppercase px-2 md:px-3 py-1.5 rounded-xl border-none ring-1 ring-inset ${inv.status_fatura === 'Paga' ? 'bg-emerald-50 text-emerald-600 ring-emerald-100' : 'bg-amber-50 text-amber-600 ring-amber-100'}`}>
+                          {STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                        </select>
+                      </td>
+                      <td className="px-6 md:px-8 py-4 md:py-6 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => setSurchargeModal({id: inv.id, valor: Number(inv.valor)})} className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-indigo-600 hover:text-white transition-all"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 6v6m0 0v6m0-6h6m-6 0H6" strokeWidth="2" /></svg></button>
+                          <button onClick={() => setDeleteModal({invoiceId: inv.id, appointmentId: (inv as any).appointment_id})} className="p-2 bg-rose-50 text-rose-500 rounded-lg hover:bg-rose-600 hover:text-white transition-all"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6" strokeWidth="2" /></svg></button>
+                          <button onClick={() => handleViewPix(inv)} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-600 hover:text-white transition-all"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3" strokeWidth="2" /></svg></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr><td colSpan={4} className="p-10 text-center text-slate-400">Nenhuma fatura encontrada.</td></tr>
+                )
               ) : (
-                appointmentsToBill.map(apt => (
-                  <tr key={apt.id} className="hover:bg-amber-50/10 transition-colors">
-                    <td className="px-6 md:px-8 py-4 md:py-6 font-bold">{apt.contactName}</td>
-                    <td className="px-6 md:px-8 py-4 md:py-6 font-black text-slate-900 font-mono">R$ {(apt.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                    <td className="px-6 md:px-8 py-4 md:py-6 text-xs text-slate-500">{new Date(apt.date + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
-                    <td className="px-6 md:px-8 py-4 md:py-6 text-right"><button onClick={() => handleGenerateInvoice(apt)} className="bg-emerald-500 text-white px-4 md:px-5 py-2 rounded-xl text-[9px] md:text-[10px] font-black uppercase shadow-md transition-all active:scale-95 whitespace-nowrap">Gerar Fatura</button></td>
-                  </tr>
-                ))
+                appointmentsToBill.length > 0 ? (
+                  appointmentsToBill.map(apt => (
+                    <tr key={apt.id} className="hover:bg-amber-50/10 transition-colors">
+                      <td className="px-6 md:px-8 py-4 md:py-6 font-bold">{apt.contactName}</td>
+                      <td className="px-6 md:px-8 py-4 md:py-6 font-black text-slate-900 font-mono">R$ {(apt.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                      <td className="px-6 md:px-8 py-4 md:py-6 text-xs text-slate-500">{new Date(apt.date + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
+                      <td className="px-6 md:px-8 py-4 md:py-6 text-right"><button onClick={() => handleGenerateInvoice(apt)} className="bg-emerald-500 text-white px-4 md:px-5 py-2 rounded-xl text-[9px] md:text-[10px] font-black uppercase shadow-md transition-all active:scale-95 whitespace-nowrap">Gerar Fatura</button></td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr><td colSpan={4} className="p-10 text-center text-slate-400">Nenhum agendamento pendente de fatura.</td></tr>
+                )
               )}
             </tbody>
           </table>
         </div>
         
         {/* PAGINAÇÃO */}
-        <div className="p-4 md:p-6 bg-slate-50/50 border-t flex justify-between items-center">
-          <p className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest">Página {invPage} de {totalInvPages || 1}</p>
-          <div className="flex gap-2">
-            <button disabled={invPage === 1} onClick={() => setInvPage(p => p - 1)} className="p-2 bg-white border rounded-xl disabled:opacity-30 shadow-sm"><svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" strokeWidth="2"/></svg></button>
-            <button disabled={invPage === totalInvPages} onClick={() => setInvPage(p => p + 1)} className="p-2 bg-white border rounded-xl disabled:opacity-30 shadow-sm"><svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" strokeWidth="2"/></svg></button>
+        {activeSubTab === 'invoices' && (
+          <div className="p-4 md:p-6 bg-slate-50/50 border-t flex justify-between items-center">
+            <p className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest">Página {invPage} de {totalInvPages || 1}</p>
+            <div className="flex gap-2">
+              <button disabled={invPage === 1} onClick={() => setInvPage(p => p - 1)} className="p-2 bg-white border rounded-xl disabled:opacity-30 shadow-sm"><svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" strokeWidth="2"/></svg></button>
+              <button disabled={invPage === totalInvPages} onClick={() => setInvPage(p => p + 1)} className="p-2 bg-white border rounded-xl disabled:opacity-30 shadow-sm"><svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" strokeWidth="2"/></svg></button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-
+      {/* ... (Modais permanecem os mesmos) ... */}
       {/* MODAL EXCLUSÃO */}
       {deleteModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-6 animate-in fade-in duration-200">
@@ -277,7 +304,7 @@ const BillingPage: React.FC<BillingPageProps> = ({ showToast }) => {
         </div>
       )}
 
-      {/* MODAL PIX E SUCESSO */}
+      {/* MODAL PIX */}
       {selectedInvoice && pixCharge && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-6">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-10 flex flex-col items-center">

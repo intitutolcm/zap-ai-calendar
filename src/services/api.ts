@@ -85,20 +85,25 @@ export const api = {
   /* ================= USERS ================= */
   users: {
     listProfiles: async (user: User) => {
-      if (!user?.id) return [];
+    if (!user?.id) return [];
 
-      let query = supabase.from('users_profile').select('*');
+    // Iniciamos a query simples
+    let query = supabase.from('users_profile').select('*');
 
-      if (user.role === 'admin') {
-        query = query.eq('role', 'company');
-      } else {
-        query = query.eq('company_id', user.id);
-      }
+    // O RLS (que corrigimos acima) já vai filtrar automaticamente o que o utilizador pode ver.
+    // Mas para facilitar a UI, podemos adicionar filtros manuais:
+    if (user.role === 'admin') {
+      // Admin quer ver apenas quem é Empresa (contas principais)
+      query = query.eq('role', 'company');
+    } else if (user.role === 'company') {
+      // Empresa quer ver os seus colaboradores
+      query = query.eq('company_id', user.id);
+    }
 
-      const { data, error } = await query.order('name');
-      if (error) throw error;
+    const { data, error } = await query.order('name');
+    if (error) throw error;
 
-      return data;
+    return data || [];
     },
 
     upsert: async (userData: any) => {
@@ -385,17 +390,13 @@ export const api = {
   appointments: {
     list: async (user: User) => {
       const cid = getTargetId(user);
-
       const { data, error } = await supabase
         .from('appointments')
-        .select(
-          '*, contacts(id,name,cpf), services(id,name,price), professionals(id,name)'
-        )
+        .select('*, contacts(id,name,cpf), services(id,name,price), professionals(id,name)')
         .eq('company_id', cid)
         .order('appointment_date');
 
       if (error) throw error;
-
       return (data || []).map((ap) => ({
         ...ap,
         contactId: ap.contact_id,
@@ -403,46 +404,101 @@ export const api = {
         professionalId: ap.professional_id,
         date: ap.appointment_date,
         time: ap.appointment_time,
-        contactName: ap.contacts?.name || 'Cliente sem nome',
-        contactCpf: ap.contacts?.cpf || '',
+        contactName: ap.contacts?.name || 'Cliente',
         serviceName: ap.services?.name || 'Serviço',
-        professionalName:
-          ap.professionals?.name || 'Profissional',
+        professionalName: ap.professionals?.name || 'Profissional',
         price: ap.services?.price || 0,
       }));
     },
 
-    create: async (data: any, user: User) => {
-      const { error } = await supabase
+    save: async (formData: any, user: User, editingId: string | null) => {
+    const payload = {
+      contact_id: formData.contactId,
+      service_id: formData.serviceId,
+      professional_id: formData.professionalId,
+      appointment_date: formData.date,
+      appointment_time: formData.time,
+      status: formData.status,
+      company_id: user.company_id || user.id
+    };
+
+    const { data: result, error } = editingId 
+      ? await supabase.from('appointments').update(payload).eq('id', editingId).select('id').single()
+      : await supabase.from('appointments').insert(payload).select('id').single();
+
+    if (error) throw error;
+
+    // Se estiver CONFIRMADO, processa side-effects
+    if (formData.status === 'CONFIRMED') {
+      // 1. Google Sync
+      if (user.google_connected) {
+        supabase.functions.invoke('google-calendar-sync', { body: { appointmentId: result.id, action: 'UPSERT' } });
+      }
+      // 2. WhatsApp Notification
+      api.appointments.sendConfirmation(result.id);
+    }
+
+    return result;
+    },
+
+    getAvailableSlots: async (professionalId: string, serviceId: string, date: string) => {
+      // 1. Busca duração do serviço e jornada do profissional
+      const { data: service } = await supabase.from('services').select('duration_minutes').eq('id', serviceId).single();
+      const { data: prof } = await supabase.from('professionals').select('*').eq('id', professionalId).single();
+      
+      if (!service || !prof) return [];
+
+      // 2. Busca agendamentos já existentes no dia para este profissional
+      const { data: existing } = await supabase
         .from('appointments')
-        .insert({
-          contact_id: data.contactId,
-          service_id: data.serviceId,
-          professional_id: data.professionalId,
-          appointment_date: data.date,
-          appointment_time: data.time,
-          company_id: getTargetId(user),
-          status: 'PENDING',
+        .select('appointment_time')
+        .eq('professional_id', professionalId)
+        .eq('appointment_date', date)
+        .not('status', 'eq', 'CANCELLED');
+
+      const occupiedTimes = existing?.map(a => a.appointment_time.substring(0, 5)) || [];
+
+      // 3. Gera slots baseados na jornada (Ex: 08:00 até 18:00)
+      const slots: string[] = [];
+      let current = new Date(`${date}T${prof.start_time}`);
+      const end = new Date(`${date}T${prof.end_time}`);
+      const duration = service.duration_minutes;
+
+      while (current < end) {
+        const timeLabel = current.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        
+        // Só adiciona se o horário não estiver ocupado
+        if (!occupiedTimes.includes(timeLabel)) {
+          slots.push(timeLabel);
+        }
+        
+        // Avança o relógio de acordo com a duração do serviço
+        current.setMinutes(current.getMinutes() + duration);
+      }
+
+      return slots;
+    },
+
+    updateStatus: async (id: string, status: string, user: User) => {
+      const { error } = await supabase.from('appointments').update({ status }).eq('id', id);
+      if (error) throw error;
+
+      if (status === 'CONFIRMED') {
+        if (user.google_connected) {
+          supabase.functions.invoke('google-calendar-sync', { body: { appointmentId: id, action: 'UPSERT' } });
+        }
+        api.appointments.sendConfirmation(id);
+      }
+    },
+
+    delete: async (id: string, user: User) => {
+      // Se tiver Google, remove de lá primeiro
+      if (user.google_connected) {
+        await supabase.functions.invoke('google-calendar-sync', {
+          body: { appointmentId: id, action: 'DELETE' }
         });
-
-      if (error) throw error;
-    },
-
-    delete: async (id: string) => {
-      const { error } = await supabase
-        .from('appointments')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-    },
-
-    updateStatus: async (id: string, status: string) => {
-      const { error } = await supabase
-        .from('appointments')
-        .update({ status })
-        .eq('id', id);
-
+      }
+      const { error } = await supabase.from('appointments').delete().eq('id', id);
       if (error) throw error;
     },
 
@@ -533,19 +589,48 @@ export const api = {
   /* ================= AGENTS ================= */
   agents: {
     list: async (user: User) => {
+      const cid = user.company_id || user.id;
       const { data, error } = await supabase
         .from('agents')
-        .select('*, agent_tools ( tool_id )')
-        .eq('company_id', getTargetId(user))
+        .select('*')
+        .eq('company_id', cid)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
+      return data;
+    },
 
-      return data.map((a: any) => ({
-        ...a,
-        selectedTools:
-          a.agent_tools?.map((t: any) => t.tool_id) || [],
-      }));
+    upsert: async (agentData: any, user: User) => {
+    const cid = user.company_id || user.id;
+
+    // MAPEAMENTO: De camelCase (Frontend) para snake_case (Banco de Dados)
+    const payload = {
+      id: agentData.id || undefined, // Se for novo, o id é gerado pelo banco
+      name: agentData.name,
+      prompt: agentData.prompt,
+      company_id: cid,
+      // Mapeando as colunas que deram erro
+      enable_audio: agentData.enableAudio ?? agentData.enable_audio ?? false,
+      enable_image: agentData.enableImage ?? agentData.enable_image ?? false,
+      is_multi_agent: agentData.isMultiAgent ?? agentData.is_multi_agent ?? false,
+      parent_agent_id: agentData.parentAgentId ?? agentData.parent_agent_id ?? null,
+      temperature: parseFloat(agentData.temperature) || 0,
+      presence_penalty: parseFloat(agentData.presence_penalty) || 0.6
+    };
+
+    const { data, error } = await supabase
+      .from('agents')
+      .upsert(payload)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+    },
+
+    delete: async (id: string) => {
+      const { error } = await supabase.from('agents').delete().eq('id', id);
+      if (error) throw error;
     },
 
     save: async (agent: any, user: User) => {
@@ -746,39 +831,30 @@ export const api = {
     },
   },
 
+/* ================= SETTINGS ================= */
   settings: {
-    /**
-     * Busca as configurações da empresa
-     */
     get: async (user: User) => {
-      const { data, error } = await supabase
-        .from('settings')
-        .select('*')
-        .eq('company_id', getTargetId(user))
-        .maybeSingle();
-
+      const { data, error } = await supabase.from('settings').select('*').eq('company_id', getTargetId(user)).maybeSingle();
       if (error) throw error;
       return data;
     },
-
-    /**
-     * Salva ou atualiza as configurações (Upsert)
-     */
     save: async (user: User, formData: any) => {
-      const { error } = await supabase
-        .from('settings')
-        .upsert({
-          company_id: getTargetId(user),
-          business_hours_start: formData.businessHoursStart,
-          business_hours_end: formData.businessHoursEnd,
-          working_days: formData.workingDays,
-          offline_message: formData.offlineMessage,
-          address: formData.address,
-          website: formData.website,
-          instagram: formData.instagram,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'company_id' }); // Conflito baseado no ID único da empresa
-
+      const { error } = await supabase.from('settings').upsert({
+        company_id: getTargetId(user),
+        business_hours_start: formData.businessHoursStart,
+        business_hours_end: formData.businessHoursEnd,
+        working_days: formData.workingDays,
+        offline_message: formData.offlineMessage,
+        address: formData.address, website: formData.website, instagram: formData.instagram,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'company_id' });
+      if (error) throw error;
+    },
+    // Função para desconectar
+    disconnectGoogle: async (user: User) => {
+      const { error } = await supabase.from('users_profile')
+        .update({ google_connected: false, google_refresh_token: null, google_calendar_id: null })
+        .eq('id', user.id);
       if (error) throw error;
     }
   },

@@ -166,25 +166,38 @@ const handleOpenCreate = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {activeTab === 'users' ? (
-            usersList.map(u => (
-              <div key={u.id} className={`bg-white p-6 rounded-[2.5rem] border ${u.is_active ? 'border-slate-200' : 'border-rose-100 bg-rose-50/20'} shadow-sm`}>
-                <div className="flex justify-between mb-4">
-                  <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-xs">
-                    {u.role?.substring(0, 3).toUpperCase()}
+            <>
+              {usersList.length === 0 && (
+                <div className="col-span-full py-20 text-center bg-white rounded-[2.5rem] border border-dashed border-slate-200">
+                  <p className="text-slate-400 font-medium">Nenhum utilizador encontrado.</p>
+                </div>
+              )}
+              {usersList.map(u => (
+                <div key={u.id} className={`bg-white p-6 rounded-[2.5rem] border ${u.is_active ? 'border-slate-200' : 'border-rose-100 bg-rose-50/20'} shadow-sm hover:shadow-md transition-all`}>
+                  <div className="flex justify-between mb-4">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-xs uppercase">
+                      {u.role?.substring(0, 3)}
+                    </div>
+                    <button 
+                      onClick={() => handleToggleStatus(u)}
+                      className={`text-[10px] font-bold px-3 py-1 rounded-full ${u.is_active ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}
+                    >
+                      {u.is_active ? 'Ativo' : 'Inativo'}
+                    </button>
                   </div>
+                  {/* Tratamento para nome nulo */}
+                  <h3 className="font-bold text-slate-900">{u.name || 'Utilizador sem Nome'}</h3>
+                  <p className="text-xs text-slate-400 mb-1">{u.email}</p>
+                  <p className="text-[10px] font-bold text-indigo-500 uppercase mb-6 tracking-widest">{u.role}</p>
                   <button 
-                    onClick={() => handleToggleStatus(u)}
-                    className={`text-[10px] font-bold px-3 py-1 rounded-full ${u.is_active ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}
+                    onClick={() => { setEditingItem(u); setIsModalOpen(true); }} 
+                    className="w-full py-3 rounded-xl border border-slate-100 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors"
                   >
-                    {u.is_active ? 'Ativo' : 'Inativo'}
+                    Editar Perfil
                   </button>
                 </div>
-                <h3 className="font-bold text-slate-900">{u.name}</h3>
-                <p className="text-xs text-slate-400 mb-1">{u.email}</p>
-                <p className="text-[10px] font-bold text-indigo-500 uppercase mb-6 tracking-widest">{u.role}</p>
-                <button onClick={() => { setEditingItem(u); setIsModalOpen(true); }} className="text-xs font-bold text-indigo-500 hover:underline">Editar Perfil</button>
-              </div>
-            ))
+              ))}
+            </>
           ) : (
             templates.map(t => (
                <div key={t.id} className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col group">
@@ -205,11 +218,12 @@ const handleOpenCreate = () => {
             ))
           )}
 
-          <button onClick={handleOpenCreate} className="border-2 border-dashed border-slate-200 rounded-[2.5rem] p-8 flex flex-col items-center justify-center text-slate-400 hover:border-indigo-300 hover:text-indigo-500 transition-all gap-2 group">
+          {/* Botão de Novo Item (sempre visível no final) */}
+          <button onClick={handleOpenCreate} className="border-2 border-dashed border-slate-200 rounded-[2.5rem] p-8 flex flex-col items-center justify-center text-slate-400 hover:border-indigo-300 hover:text-indigo-500 transition-all gap-2 group min-h-[200px]">
             <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform shadow-sm">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
             </div>
-            <span className="font-bold">Novo {activeTab === 'users' ? (isCompany ? 'Membro' : 'Usuário') : 'Template'}</span>
+            <span className="font-bold text-sm">Novo {activeTab === 'users' ? (isCompany ? 'Membro' : 'Empresa') : 'Template'}</span>
           </button>
         </div>
       )}

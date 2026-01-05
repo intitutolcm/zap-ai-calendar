@@ -1,19 +1,17 @@
 import NotificationListener from './components/NotificationListener';
 import Toast, { useToast } from './components/Toast';
-import Routes from './router';
+import Routes from './router'; // Este componente usa react-router-dom internamente
 
 function App() {
   const { toast, showToast, hideToast } = useToast();
 
   return (
     <div className="app-container h-screen w-full">
-      {/* Listener Global de Mensagens */}
       <NotificationListener showToast={showToast} />
       
-      {/* Roteador Principal */}
+      {/* Agora o Routes terá o contexto do Router definido no index.tsx */}
       <Routes showToast={showToast} />
     
-      {/* Componente de Toast Único */}
       {toast && (
         <Toast 
           message={toast.message} 

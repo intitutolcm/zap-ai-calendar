@@ -31,7 +31,6 @@ const AgentsPage: React.FC<AgentsPageProps> = ({ showToast }) => {
   const [editingAgent, setEditingAgent] = useState<EditingAgent | null>(null);
   const { user } = useAuth();
 
-  // Estados para Ferramentas Dinâmicas
   const [availableTools, setAvailableTools] = useState<any[]>([]);
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
 
@@ -54,7 +53,7 @@ const AgentsPage: React.FC<AgentsPageProps> = ({ showToast }) => {
         api.agents.list(user),
         api.instances.list(user),
         api.templates.listAll(user),
-        supabase.from('tools').select('*') // Busca ferramentas do banco
+        supabase.from('tools').select('*')
       ]);
       setAgents(agentsData);
       setInstances(instancesData);
@@ -96,31 +95,35 @@ ${editingAgent.pacif.formato}
 `.trim();
 
     try {
-      console.log("💾 Salvando Agente...");
-      const agentToSave = { 
-        ...editingAgent, 
+      const agentToSave = {
+        id: editingAgent.id,
+        name: editingAgent.name,
         prompt: fullPrompt,
-        isMultiAgent: editingAgent.is_multi_agent,
-        parentAgentId: editingAgent.is_multi_agent ? null : editingAgent.parent_agent_id 
+        temperature: editingAgent.temperature,
+        presence_penalty: editingAgent.presence_penalty,
+        // Normalização para o Banco de Dados
+        enable_audio: editingAgent.enable_audio || (editingAgent as any).enableAudio || false,
+        enable_image: editingAgent.enable_image || (editingAgent as any).enableImage || false,
+        is_multi_agent: editingAgent.is_multi_agent || false,
+        parent_agent_id: editingAgent.is_multi_agent ? null : (editingAgent.parent_agent_id || (editingAgent as any).parentAgentId)
       };
-      delete agentToSave.pacif;
 
-      const savedAgent = await api.agents.save(agentToSave, user);
+      const savedAgent = await api.agents.upsert(agentToSave, user);
       const agentId = editingAgent.id || savedAgent.id;
 
-      // 1. Sincronizar Ferramentas (agent_tools)
       await supabase.from('agent_tools').delete().eq('agent_id', agentId);
       if (selectedTools.length > 0) {
         const toolLinks = selectedTools.map(tId => ({ agent_id: agentId, tool_id: tId }));
         await supabase.from('agent_tools').insert(toolLinks);
       }
 
-      // 2. Vincular Instância se for Principal
-      if (editingAgent.is_multi_agent && editingAgent.targetInstance) {
-        await api.instances.updateAgent(editingAgent.targetInstance, agentId);
+      if (agentToSave.is_multi_agent && editingAgent.targetInstance) {
+        await supabase.from('instances')
+          .update({ agent_id: agentId })
+          .eq('name', editingAgent.targetInstance);
       }
 
-      showToast('Agente e Ferramentas salvos!', 'success');
+      showToast('Inteligência atualizada!', 'success');
       setEditingAgent(null);
       loadData();
     } catch (error: any) {
@@ -133,7 +136,6 @@ ${editingAgent.pacif.formato}
       ? parsePromptToPacif(agent.prompt) 
       : { papel: '', contexto: '', regras: '', acao: '', intencao: '', formato: '' };
 
-    // Buscar ferramentas já vinculadas a este agente
     let currentTools: string[] = [];
     if (agent.id) {
       const { data } = await supabase.from('agent_tools').select('tool_id').eq('agent_id', agent.id);
@@ -141,13 +143,29 @@ ${editingAgent.pacif.formato}
     }
 
     setSelectedTools(currentTools);
+    
+    // CORREÇÃO AQUI: Mapear o que vem do banco (is_multi_agent) para o estado
     setEditingAgent({
-    ...agent,
-    targetInstance: instanceName || '',
-    is_multi_agent: Boolean((agent as any).is_multi_agent || (agent as any).isMultiAgent), 
-    parent_agent_id: (agent as any).parent_agent_id || (agent as any).parentAgentId || null,
-    pacif: pacifData
-  });
+      ...agent,
+      targetInstance: instanceName || '',
+      // Tenta ler das duas formas para garantir compatibilidade
+      is_multi_agent: (agent as any).is_multi_agent ?? (agent as any).isMultiAgent ?? false,
+      parent_agent_id: (agent as any).parent_agent_id ?? (agent as any).parentAgentId ?? null,
+      enable_audio: (agent as any).enable_audio ?? (agent as any).enableAudio ?? false,
+      enable_image: (agent as any).enable_image ?? (agent as any).enableImage ?? false,
+      pacif: pacifData
+    });
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Excluir este agente?')) return;
+    try {
+      await api.agents.delete(id);
+      showToast('Agente removido', 'success');
+      loadData();
+    } catch (error) {
+      showToast('Erro ao excluir', 'error');
+    }
   };
 
   const handleApplyTemplate = (templateId: string) => {
@@ -168,46 +186,48 @@ ${editingAgent.pacif.formato}
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto w-full overflow-y-auto h-full custom-scrollbar">
-      <div className="flex justify-between items-center mb-10">
+    <div className="p-8 max-w-7xl mx-auto w-full overflow-y-auto h-full custom-scrollbar bg-slate-50/30">
+      <header className="flex justify-between items-center mb-10">
         <div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Agentes de IA</h1>
-          <p className="text-slate-500 mt-1">Configure o comportamento e as ferramentas do sistema</p>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Agent IA</h1>
+          <p className="text-slate-500 mt-1">Gerencie as personalidades da sua operação.</p>
         </div>
         <button
-          onClick={() => openEditModal({ name: '', prompt: '', enableAudio: false, enableImage: false })}
+          onClick={() => openEditModal({ name: '', prompt: '', temperature: 0.7 })}
           className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg transition-all"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4" strokeWidth="2" strokeLinecap="round" /></svg>
           Novo Agente
         </button>
-      </div>
+      </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {agents.map((agent) => {
-          const isMulti = (agent as any).isMultiAgent;
-          const isChild = !!(agent as any).parentAgentId;
+          // CORREÇÃO AQUI: Ler o campo is_multi_agent do banco
+          const isMulti = (agent as any).is_multi_agent || (agent as any).isMultiAgent;
+          const isChild = !!((agent as any).parent_agent_id || (agent as any).parentAgentId);
           const linkedInstance = instances.find(i => i.agent_id === agent.id);
           
           return (
-            <div key={agent.id} className={`bg-white border ${isMulti ? 'border-indigo-200 ring-2 ring-indigo-50' : 'border-slate-200'} rounded-[2.5rem] p-8 shadow-sm hover:shadow-xl transition-all flex flex-col group relative overflow-hidden`}>
+            <div key={agent.id} className={`bg-white border ${isMulti ? 'border-indigo-200 ring-4 ring-indigo-50' : 'border-slate-200'} rounded-[2.5rem] p-8 shadow-sm hover:shadow-xl transition-all flex flex-col group relative overflow-hidden`}>
               <div className="flex justify-between items-start mb-6">
-                <div className={`p-4 ${isMulti ? "bg-indigo-600 text-white" : "bg-indigo-50 text-indigo-600"} rounded-2xl`}>
+                <div className={`p-4 ${isMulti ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"} rounded-2xl`}>
                   <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     {isMulti ? <path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" strokeWidth="2"/> : <path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18" strokeWidth="2"/>}
                   </svg>
                 </div>
                 <div className="flex flex-col items-end gap-2">
-                  {linkedInstance && <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-bold">Ativo: {linkedInstance.name}</span>}
-                  {isMulti && <span className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-[10px] font-black">Router Principal</span>}
-                  {isChild && <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-[10px] font-bold">Sub-Agente</span>}
+                  {linkedInstance && <span className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-black uppercase tracking-wider">● Conectado: {linkedInstance.name}</span>}
+                  {isMulti && <span className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-[10px] font-black uppercase tracking-wider">Router Principal</span>}
+                  {isChild && <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-[10px] font-bold uppercase tracking-wider">Sub-Agente</span>}
                 </div>
               </div>
               <h3 className="text-2xl font-bold text-slate-900 mb-2">{agent.name}</h3>
-              <p className="text-slate-500 text-sm mb-6 line-clamp-2 italic">{agent.prompt?.substring(0, 120)}...</p>
-              <div className="mt-auto flex gap-3">
-                <button onClick={() => openEditModal(agent, linkedInstance?.name)} className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-bold hover:bg-slate-800 transition-colors">Configurar</button>
-                <button onClick={() => handleDelete(agent.id)} className="p-4 bg-rose-50 text-rose-500 rounded-2xl hover:bg-rose-100"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeWidth="2"/></svg></button>
+              <p className="text-slate-500 text-sm mb-6 line-clamp-2 italic">{agent.prompt?.substring(0, 150)}...</p>
+              
+              <div className="mt-auto flex gap-3 pt-6 border-t border-slate-50">
+                <button onClick={() => openEditModal(agent, linkedInstance?.name)} className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-bold hover:bg-slate-800 transition-colors shadow-md">Configurar</button>
+                <button onClick={() => handleDelete(agent.id)} className="p-4 bg-rose-50 text-rose-500 rounded-2xl hover:bg-rose-100 transition-colors"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeWidth="2"/></svg></button>
               </div>
             </div>
           );
@@ -216,121 +236,138 @@ ${editingAgent.pacif.formato}
 
       {editingAgent && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-5xl max-h-[95vh] rounded-[2.5rem] shadow-2xl overflow-y-auto custom-scrollbar animate-in zoom-in duration-200">
-            <div className="p-8 sm:p-10">
-              
-              {/* TOP SWITCH: MULTI AGENT FLAG */}
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-                <div className="p-4 bg-indigo-50 rounded-3xl border border-indigo-100 flex items-center gap-4">
-                  {/* MUDANÇA AQUI: de div para label */}
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={!!editingAgent.is_multi_agent} // Garante valor booleano
-                      onChange={e => setEditingAgent({...editingAgent, is_multi_agent: e.target.checked})} 
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                  </label>
-                  <span className="text-sm font-black text-indigo-700 uppercase tracking-tighter cursor-pointer select-none">
-                    Este é um Agente Principal (Router)
-                  </span>
-                </div>
-                <button onClick={() => setEditingAgent(null)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors self-end md:self-auto">
+          <div className="bg-white w-full max-w-6xl max-h-[95vh] rounded-[3rem] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in duration-200">
+            
+            <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+               <div className="flex items-center gap-4">
+                  <div className="p-3 bg-indigo-600 rounded-2xl text-white shadow-lg">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" strokeWidth="2" /></svg>
+                  </div>
+                  <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">{editingAgent.id ? 'Ajustar Inteligência' : 'Novo Agente'}</h2>
+               </div>
+               <button onClick={() => setEditingAgent(null)} className="p-3 hover:bg-white rounded-2xl transition-all shadow-sm border border-slate-200">
                   <svg className="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" strokeWidth="2"/></svg>
                 </button>
-              </div>
+            </div>
 
-              {/* HIERARQUIA E TEMPLATE */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                <div className="p-6 bg-slate-50 border border-slate-100 rounded-3xl">
-                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">{editingAgent.is_multi_agent ? "Instância Vinculada" : "Vincular ao Agente Principal"}</label>
+            <div className="flex-1 overflow-y-auto p-8 sm:p-10 custom-scrollbar">
+              <div className="flex flex-col md:flex-row gap-6 mb-10">
+                <div className="flex-1 p-6 bg-indigo-50/50 rounded-[2rem] border border-indigo-100">
+                  <label className="flex items-center gap-4 cursor-pointer mb-4">
+                    <div className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" checked={!!editingAgent.is_multi_agent} onChange={e => setEditingAgent({...editingAgent, is_multi_agent: e.target.checked})} className="sr-only peer" />
+                      <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                    </div>
+                    <span className="text-xs font-black text-indigo-800 uppercase tracking-widest">Router Principal (Escuta WhatsApp)</span>
+                  </label>
+                  
                   {editingAgent.is_multi_agent ? (
-                    <select value={editingAgent.targetInstance} onChange={e => setEditingAgent({...editingAgent, targetInstance: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-white border border-indigo-200 outline-none text-sm font-bold appearance-none">
-                      <option value="">Nenhuma Instância Selecionada</option>
+                    <select value={editingAgent.targetInstance} onChange={e => setEditingAgent({...editingAgent, targetInstance: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-white border border-indigo-200 outline-none text-sm font-bold">
+                      <option value="">Vincular a uma instância...</option>
                       {instances.map(inst => <option key={inst.id} value={inst.name}>{inst.name}</option>)}
                     </select>
                   ) : (
-                    <select value={editingAgent.parent_agent_id || ''} onChange={e => setEditingAgent({...editingAgent, parent_agent_id: e.target.value || null})} className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 outline-none text-sm appearance-none">
-                      <option value="">Nenhum Agente Pai (Independente)</option>
-                      {agents.filter(a => (a as any).isMultiAgent && a.id !== editingAgent.id).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    <select value={editingAgent.parent_agent_id || ''} onChange={e => setEditingAgent({...editingAgent, parent_agent_id: e.target.value || null})} className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 outline-none text-sm font-medium">
+                      <option value="">Sem Agente Pai (Independente)</option>
+                      {agents.filter(a => ((a as any).is_multi_agent || (a as any).isMultiAgent) && a.id !== editingAgent.id).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                     </select>
                   )}
                 </div>
-                <div className="p-6 bg-slate-50 border border-slate-100 rounded-3xl">
-                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">Carregar Modelo de Prompt</label>
-                  <select onChange={(e) => handleApplyTemplate(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 outline-none text-sm" defaultValue=""><option value="" disabled>Escolha um template...</option>{templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+
+                <div className="flex-1 p-6 bg-slate-50 rounded-[2rem] border border-slate-200">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-3 tracking-[0.2em]">Templates</label>
+                  <select onChange={(e) => handleApplyTemplate(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 outline-none text-sm font-bold" defaultValue="">
+                    <option value="" disabled>Carregar modelo...</option>
+                    {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
                 </div>
               </div>
 
-              <form onSubmit={handleSave} className="space-y-6">
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase mb-2 ml-1">Nome de Identificação Interna</label>
-                  <input required value={editingAgent.name} onChange={e => setEditingAgent({...editingAgent, name: e.target.value})} className="w-full px-5 py-4 rounded-2xl bg-slate-50 border border-slate-100 outline-none focus:border-indigo-500 font-medium" placeholder="Ex: Lú - Atendente Agendamentos" />
-                </div>
-
-                {/* MATRIZ PACRIF */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-6">
-                    <div><label className="block text-xs font-bold text-indigo-500 uppercase mb-2 ml-1">P — Papel</label><textarea required rows={3} value={editingAgent.pacif?.papel} onChange={e => setEditingAgent({...editingAgent, pacif: {...editingAgent.pacif!, papel: e.target.value}})} className="w-full px-5 py-4 rounded-2xl bg-indigo-50/30 border border-indigo-100 text-sm outline-none focus:border-indigo-500" /></div>
-                    <div><label className="block text-xs font-bold text-emerald-500 uppercase mb-2 ml-1">C — Contexto</label><textarea required rows={4} value={editingAgent.pacif?.contexto} onChange={e => setEditingAgent({...editingAgent, pacif: {...editingAgent.pacif!, contexto: e.target.value}})} className="w-full px-5 py-4 rounded-2xl bg-emerald-50/30 border border-emerald-100 text-sm outline-none focus:border-emerald-500" /></div>
-                    <div><label className="block text-xs font-bold text-violet-500 uppercase mb-2 ml-1">R — Regras</label><textarea required rows={4} value={editingAgent.pacif?.regras} onChange={e => setEditingAgent({...editingAgent, pacif: {...editingAgent.pacif!, regras: e.target.value}})} className="w-full px-5 py-4 rounded-2xl bg-violet-50/30 border border-violet-100 text-sm outline-none focus:border-violet-500" /></div>
+              <form onSubmit={handleSave} className="space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2 ml-1">Nome do Agente</label>
+                    <input required value={editingAgent.name} onChange={e => setEditingAgent({...editingAgent, name: e.target.value})} className="w-full px-6 py-4 rounded-2xl bg-slate-50 border border-slate-100 outline-none focus:border-indigo-500 font-bold text-lg" />
                   </div>
-                  <div className="space-y-6">
-                    <div><label className="block text-xs font-bold text-sky-500 uppercase mb-2 ml-1">A — Ação</label><textarea required rows={6} value={editingAgent.pacif?.acao} onChange={e => setEditingAgent({...editingAgent, pacif: {...editingAgent.pacif!, acao: e.target.value}})} className="w-full px-5 py-4 rounded-2xl bg-sky-50/30 border border-sky-100 text-sm outline-none focus:border-sky-500" /></div>
-                    <div><label className="block text-xs font-bold text-amber-500 uppercase mb-2 ml-1">I — Intenção</label><textarea required rows={3} value={editingAgent.pacif?.intencao} onChange={e => setEditingAgent({...editingAgent, pacif: {...editingAgent.pacif!, intencao: e.target.value}})} className="w-full px-5 py-4 rounded-2xl bg-amber-50/30 border border-amber-100 text-sm outline-none focus:border-amber-500" /></div>
-                    <div><label className="block text-xs font-bold text-rose-500 uppercase mb-2 ml-1">F — Formato</label><textarea required rows={3} value={editingAgent.pacif?.formato} onChange={e => setEditingAgent({...editingAgent, pacif: {...editingAgent.pacif!, formato: e.target.value}})} className="w-full px-5 py-4 rounded-2xl bg-rose-50/30 border border-rose-100 text-sm outline-none focus:border-rose-500" /></div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2 ml-1">Criatividade ({editingAgent.temperature})</label>
+                    <input type="range" min="0" max="1" step="0.1" value={editingAgent.temperature || 0} onChange={e => setEditingAgent({...editingAgent, temperature: parseFloat(e.target.value)})} className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 mt-5" />
                   </div>
                 </div>
 
-                {/* HABILIDADES (TOOLS) DINÂMICAS */}
-                <div className="p-8 bg-slate-900 rounded-[2.5rem] mt-6 shadow-xl">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="w-10 h-10 bg-indigo-500/20 rounded-xl flex items-center justify-center text-indigo-400">
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-[0.3em] mb-4 flex items-center gap-2">PACRIF (Prompts)</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-6">
+                      <div className="p-6 bg-indigo-50/20 rounded-[2.5rem] border border-indigo-100/50">
+                        <label className="block text-xs font-black text-indigo-600 uppercase mb-3">P — Papel</label>
+                        <textarea required rows={3} value={editingAgent.pacif?.papel} onChange={e => setEditingAgent({...editingAgent, pacif: {...editingAgent.pacif!, papel: e.target.value}})} className="w-full bg-transparent text-sm outline-none resize-none" />
+                      </div>
+                      <div className="p-6 bg-emerald-50/20 rounded-[2.5rem] border border-emerald-100/50">
+                        <label className="block text-xs font-black text-emerald-600 uppercase mb-3">C — Contexto</label>
+                        <textarea required rows={4} value={editingAgent.pacif?.contexto} onChange={e => setEditingAgent({...editingAgent, pacif: {...editingAgent.pacif!, contexto: e.target.value}})} className="w-full bg-transparent text-sm outline-none resize-none" />
+                      </div>
+                      <div className="p-6 bg-violet-50/20 rounded-[2.5rem] border border-violet-100/50">
+                        <label className="block text-xs font-black text-violet-600 uppercase mb-3">R — Regras</label>
+                        <textarea required rows={4} value={editingAgent.pacif?.regras} onChange={e => setEditingAgent({...editingAgent, pacif: {...editingAgent.pacif!, regras: e.target.value}})} className="w-full bg-transparent text-sm outline-none resize-none" />
+                      </div>
                     </div>
-                    <label className="block text-xs font-black text-slate-400 uppercase tracking-[0.2em]">Habilidades / Functions Ativas</label>
+                    <div className="space-y-6">
+                      <div className="p-6 bg-sky-50/20 rounded-[2.5rem] border border-sky-100/50">
+                        <label className="block text-xs font-black text-sky-600 uppercase mb-3">A — Ação</label>
+                        <textarea required rows={6} value={editingAgent.pacif?.acao} onChange={e => setEditingAgent({...editingAgent, pacif: {...editingAgent.pacif!, acao: e.target.value}})} className="w-full bg-transparent text-sm outline-none resize-none" />
+                      </div>
+                      <div className="p-6 bg-amber-50/20 rounded-[2.5rem] border border-amber-100/50">
+                        <label className="block text-xs font-black text-amber-600 uppercase mb-3">I — Intenção</label>
+                        <textarea required rows={3} value={editingAgent.pacif?.intencao} onChange={e => setEditingAgent({...editingAgent, pacif: {...editingAgent.pacif!, intencao: e.target.value}})} className="w-full bg-transparent text-sm outline-none resize-none" />
+                      </div>
+                      <div className="p-6 bg-rose-50/20 rounded-[2.5rem] border border-rose-100/50">
+                        <label className="block text-xs font-black text-rose-600 uppercase mb-3">F — Formato</label>
+                        <textarea required rows={3} value={editingAgent.pacif?.formato} onChange={e => setEditingAgent({...editingAgent, pacif: {...editingAgent.pacif!, formato: e.target.value}})} className="w-full bg-transparent text-sm outline-none resize-none" />
+                      </div>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                </div>
+
+                <div className="p-8 bg-slate-900 rounded-[3rem] shadow-xl">
+                  <div className="flex items-center gap-3 mb-8">
+                    <div className="w-12 h-12 bg-indigo-500/20 rounded-2xl flex items-center justify-center text-indigo-400 border border-indigo-500/30">
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" strokeWidth="3" /></svg>
+                    </div>
+                    <label className="block text-xs font-black text-white uppercase tracking-[0.3em]">Habilidades Ativas</label>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {availableTools.map(tool => (
-                      <label key={tool.id} className={`flex items-center gap-4 p-4 rounded-2xl cursor-pointer border transition-all ${selectedTools.includes(tool.id) ? 'bg-indigo-600 border-indigo-400 shadow-indigo-500/20' : 'bg-slate-800 border-slate-700 hover:border-slate-500'}`}>
-                        <input 
-                          type="checkbox" 
-                          checked={selectedTools.includes(tool.id)}
-                          onChange={(e) => {
-                            if(e.target.checked) setSelectedTools([...selectedTools, tool.id]);
-                            else setSelectedTools(selectedTools.filter(id => id !== tool.id));
-                          }}
-                          className="w-6 h-6 text-indigo-500 rounded-lg bg-slate-700 border-none focus:ring-0"
-                        />
+                      <label key={tool.id} className={`flex items-start gap-4 p-5 rounded-[1.8rem] cursor-pointer border transition-all duration-300 ${selectedTools.includes(tool.id) ? 'bg-indigo-600 border-indigo-400 ring-4 ring-indigo-500/10' : 'bg-slate-800 border-slate-700 hover:border-slate-500'}`}>
+                        <input type="checkbox" checked={selectedTools.includes(tool.id)} onChange={(e) => {
+                          if(e.target.checked) setSelectedTools([...selectedTools, tool.id]);
+                          else setSelectedTools(selectedTools.filter(id => id !== tool.id));
+                        }} className="w-6 h-6 text-indigo-500 rounded-lg bg-slate-700 border-none mt-1" />
                         <div>
-                          <p className={`text-sm font-bold ${selectedTools.includes(tool.id) ? 'text-white' : 'text-slate-200'}`}>{tool.name.replace(/_/g, ' ')}</p>
-                          <p className={`text-[10px] ${selectedTools.includes(tool.id) ? 'text-indigo-100' : 'text-slate-400'}`}>{tool.description}</p>
+                          <p className={`text-sm font-black uppercase tracking-tighter ${selectedTools.includes(tool.id) ? 'text-white' : 'text-slate-200'}`}>{tool.name.replace(/_/g, ' ')}</p>
+                          <p className={`text-[10px] mt-1 leading-relaxed ${selectedTools.includes(tool.id) ? 'text-indigo-100' : 'text-slate-400'}`}>{tool.description}</p>
                         </div>
                       </label>
                     ))}
                   </div>
                 </div>
 
-                {/* CONFIGURAÇÕES MULTIMÍDIA (SÓ PRINCIPAL) */}
                 {editingAgent.is_multi_agent && (
-                  <div className="grid grid-cols-2 gap-4 p-6 bg-slate-50 rounded-3xl border border-slate-100 animate-in slide-in-from-bottom-2 duration-500">
-                    <label className="flex items-center gap-3 cursor-pointer group">
-                      <input type="checkbox" checked={editingAgent.enableAudio} onChange={e => setEditingAgent({...editingAgent, enableAudio: e.target.checked})} className="w-5 h-5 rounded-lg border-slate-300 text-indigo-600" />
-                      <span className="text-sm font-bold text-slate-600">Ativar Áudio (Whisper)</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 p-8 bg-slate-50 rounded-[2.5rem] border-2 border-dashed border-slate-200">
+                    <label className="flex items-center gap-4 cursor-pointer group p-4 bg-white rounded-2xl shadow-sm border border-slate-100 hover:border-indigo-300 transition-all">
+                      <input type="checkbox" checked={editingAgent.enable_audio || (editingAgent as any).enableAudio} onChange={e => setEditingAgent({...editingAgent, enable_audio: e.target.checked})} className="w-6 h-6 rounded-lg border-slate-300 text-indigo-600" />
+                      <div><p className="text-sm font-black text-slate-700 uppercase">Áudio</p></div>
                     </label>
-                    <label className="flex items-center gap-3 cursor-pointer group">
-                      <input type="checkbox" checked={editingAgent.enableImage} onChange={e => setEditingAgent({...editingAgent, enableImage: e.target.checked})} className="w-5 h-5 rounded-lg border-slate-300 text-indigo-600" />
-                      <span className="text-sm font-bold text-slate-600">Ativar Visão (Vision)</span>
+                    <label className="flex items-center gap-4 cursor-pointer group p-4 bg-white rounded-2xl shadow-sm border border-slate-100 hover:border-indigo-300 transition-all">
+                      <input type="checkbox" checked={editingAgent.enable_image || (editingAgent as any).enableImage} onChange={e => setEditingAgent({...editingAgent, enable_image: e.target.checked})} className="w-6 h-6 rounded-lg border-slate-300 text-indigo-600" />
+                      <div><p className="text-sm font-black text-slate-700 uppercase">Visão</p></div>
                     </label>
                   </div>
                 )}
 
-                <div className="flex gap-4 pt-4">
-                  <button type="button" onClick={() => setEditingAgent(null)} className="flex-1 py-4 font-bold text-slate-400 hover:text-slate-600 transition-colors">Descartar</button>
-                  <button type="submit" className="flex-[2] bg-indigo-600 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-indigo-700 active:scale-95 transition-all">
-                    {editingAgent.id ? 'Salvar Alterações' : 'Finalizar e Criar Agente'}
-                  </button>
+                <div className="flex gap-4 pt-6 sticky bottom-0 bg-white pb-2">
+                  <button type="button" onClick={() => setEditingAgent(null)} className="flex-1 py-5 font-black text-slate-400 uppercase tracking-widest text-xs">Descartar</button>
+                  <button type="submit" className="flex-[2] bg-indigo-600 text-white py-5 rounded-[1.8rem] font-black uppercase tracking-widest shadow-xl hover:bg-indigo-700 active:scale-95 transition-all">Salvar Agente</button>
                 </div>
               </form>
             </div>
