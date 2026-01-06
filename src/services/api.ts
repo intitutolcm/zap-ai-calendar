@@ -699,79 +699,83 @@ export const api = {
     },
 
     createInvoiceWithPix: async (apt: any) => {
-    // 1. Verifica se já existe um PIX ativo para este agendamento (Cache)
-    const { data: existingPix } = await supabase
-      .from('pix_charges')
-      .select('*, invoices!inner(*)')
-      .eq('invoices.appointment_id', apt.id)
-      .gt('data_expiracao', new Date().toISOString())
-      .maybeSingle();
+  // 1. Verifica se já existe um PIX ativo para este agendamento (Cache)
+  const { data: existingPix } = await supabase
+    .from('pix_charges')
+    .select('*, invoices!inner(*)')
+    .eq('invoices.appointment_id', apt.id)
+    .gt('data_expiracao', new Date().toISOString())
+    .maybeSingle();
 
-    if (existingPix) {
-      return {
-        txid: existingPix.txid,
-        pixCopiaECola: existingPix.qrcode_copia_cola,
-        valor: existingPix.valor_original,
-        dataExpiracao: existingPix.data_expiracao,
-        fromCache: true,
-      };
-    }
+  if (existingPix) {
+    return {
+      txid: existingPix.txid,
+      pixCopiaECola: existingPix.qrcode_copia_cola,
+      valor: existingPix.valor_original,
+      dataExpiracao: existingPix.data_expiracao,
+      fromCache: true,
+    };
+  }
 
-    // 2. Chama a Edge Function Proxy (em vez do n8n direto)
-    const { data, error: functionError } = await supabase.functions.invoke('n8n-proxy', {
-      body: {
+  // 2. Chamada Direta ao Webhook do n8n (com a URL da variável de ambiente)
+  const response = await fetch(GERAR_FATURA_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      appointment_id: apt.id,
+      contact_id: apt.contact_id || apt.contactId,
+      valor: apt.price,
+      nome_cliente: apt.contactName,
+      cpf: apt.contactCpf, // CPF enviado aqui
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Erro ao chamar o Webhook de faturamento');
+  }
+
+  const data = await response.json();
+  
+  // Tratamento da resposta do n8n (geralmente vem em array [0])
+  const res = data[0]?.response || data.response;
+
+  if (!res) throw new Error('Resposta do Sicredi inválida através do n8n');
+
+  // 3. Salva a Fatura no Banco de Dados (Supabase)
+  const { data: newInv, error: invError } = await supabase
+    .from('invoices')
+    .upsert(
+      {
         appointment_id: apt.id,
         contact_id: apt.contact_id || apt.contactId,
-        valor: apt.price,
-        nome_cliente: apt.contactName,
-        cpf: apt.contactCpf, // CPF enviado aqui
-      }
-    });
+        valor: Number(res.valor_original),
+        company_id: apt.company_id,
+        status_fatura: 'Aberta',
+      },
+      { onConflict: 'appointment_id' }
+    )
+    .select()
+    .single();
 
-    if (functionError || !data) {
-      throw new Error(functionError?.message || 'Erro ao processar cobrança via Proxy');
-    }
+  if (invError) throw invError;
 
-    // O n8n costuma retornar um array, tratamos o formato da resposta
-    const res = data[0]?.response || data.response;
+  // 4. Salva os detalhes do PIX na tabela pix_charges
+  await supabase.from('pix_charges').upsert({
+    txid: res.txid,
+    invoice_id: newInv.id,
+    status_sicredi: 'PENDENTE',
+    valor_original: res.valor_original,
+    qrcode_copia_cola: res.pixCopiaECola,
+    data_expiracao: res.dataExpiracao,
+  });
 
-    if (!res) throw new Error('Resposta do Sicredi inválida através do n8n');
-
-    // 3. Salva a Fatura no Banco de Dados
-    const { data: newInv, error: invError } = await supabase
-      .from('invoices')
-      .upsert(
-        {
-          appointment_id: apt.id,
-          contact_id: apt.contact_id || apt.contactId,
-          valor: Number(res.valor_original),
-          company_id: apt.company_id,
-          status_fatura: 'Aberta',
-        },
-        { onConflict: 'appointment_id' }
-      )
-      .select()
-      .single();
-
-    if (invError) throw invError;
-
-    // 4. Salva os detalhes do PIX
-    await supabase.from('pix_charges').upsert({
-      txid: res.txid,
-      invoice_id: newInv.id,
-      status_sicredi: 'PENDENTE',
-      valor_original: res.valor_original,
-      qrcode_copia_cola: res.pixCopiaECola,
-      data_expiracao: res.dataExpiracao,
-    });
-
-    return {
-      txid: res.txid,
-      pixCopiaECola: res.pixCopiaECola,
-      valor: res.valor_original,
-      dataExpiracao: res.dataExpiracao,
-    };
-  },
+  return {
+    txid: res.txid,
+    pixCopiaECola: res.pixCopiaECola,
+    valor: res.valor_original,
+    dataExpiracao: res.dataExpiracao,
+  };
+},
 
     checkPaymentStatus: async (txid: string) => {
       const response = await fetch(
