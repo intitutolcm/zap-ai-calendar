@@ -883,6 +883,55 @@ export const api = {
   }
 },
   
+/* ================= LEADS / CRM ================= */
+leads: {
+  // Alterar entre IA e Humano, criando a conversa se não existir
+  toggleAtendimento: async (lead: any, isHuman: boolean) => {
+    // 1. Tenta buscar uma conversa existente para este contato
+    const { data: existingConv } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('contact_id', lead.id)
+      .maybeSingle();
+
+    if (existingConv) {
+      // Se existe, apenas atualiza o status
+      const { error } = await supabase
+        .from('conversations')
+        .update({ is_human_active: isHuman })
+        .eq('id', existingConv.id);
+      
+      if (error) throw error;
+      return existingConv.id;
+    } else {
+      // 2. Se não existe (lead novo), precisamos vincular a uma instância
+      const { data: inst } = await supabase
+        .from('instances')
+        .select('id')
+        .eq('company_id', lead.company_id)
+        .limit(1)
+        .single();
+
+      if (!inst) throw new Error("Nenhuma instância de WhatsApp configurada para esta empresa.");
+
+      // Criamos a conversa inicial
+      const { data: newConv, error: convErr } = await supabase
+        .from('conversations')
+        .insert({
+          contact_id: lead.id,
+          instance_id: inst.id,
+          is_human_active: isHuman,
+          last_message: 'Atendimento iniciado manualmente via CRM'
+        })
+        .select()
+        .single();
+
+      if (convErr) throw convErr;
+      return newConv.id;
+    }
+  }
+},
+
   /* ================= HELPERS ================= */
   helpers: {
     fetchFormDeps: async (user: User) => {
