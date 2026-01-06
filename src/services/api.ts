@@ -384,6 +384,21 @@ export const api = {
         content: text,
       });
     },
+
+    resetChat: async (conversationId: string) => {
+      const { error } = await supabase
+        .from('messages')
+        .delete()
+        .eq('conversation_id', conversationId);
+
+      if (error) throw error;
+
+      // Opcional: Limpar a última mensagem na tabela de conversas
+      await supabase
+        .from('conversations')
+        .update({ last_message: 'Histórico limpo' })
+        .eq('id', conversationId);
+    },
   },
 
   /* ================= APPOINTMENTS ================= */
