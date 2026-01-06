@@ -834,31 +834,54 @@ export const api = {
 
 /* ================= SETTINGS ================= */
   settings: {
-    get: async (user: User) => {
-      const { data, error } = await supabase.from('settings').select('*').eq('company_id', getTargetId(user)).maybeSingle();
-      if (error) throw error;
-      return data;
-    },
-    save: async (user: User, formData: any) => {
-      const { error } = await supabase.from('settings').upsert({
-        company_id: getTargetId(user),
-        business_hours_start: formData.businessHoursStart,
-        business_hours_end: formData.businessHoursEnd,
-        working_days: formData.workingDays,
-        offline_message: formData.offlineMessage,
-        address: formData.address, website: formData.website, instagram: formData.instagram,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'company_id' });
-      if (error) throw error;
-    },
-    // Função para desconectar
-    disconnectGoogle: async (user: User) => {
-      const { error } = await supabase.from('users_profile')
-        .update({ google_connected: false, google_refresh_token: null, google_calendar_id: null })
-        .eq('id', user.id);
-      if (error) throw error;
-    }
+  get: async (user: User) => {
+    const { data, error } = await supabase
+      .from('settings')
+      .select('*')
+      .eq('company_id', getTargetId(user))
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
   },
+
+  save: async (user: User, formData: any) => {
+    const { error } = await supabase.from('settings').upsert({
+      company_id: getTargetId(user),
+      // Mapeamento dos campos de horário e dias
+      business_hours_start: formData.businessHoursStart || formData.business_hours_start,
+      business_hours_end: formData.businessHoursEnd || formData.business_hours_end,
+      working_days: formData.workingDays || formData.working_days,
+      
+      // Mensagem e informações institucionais
+      offline_message: formData.offlineMessage || formData.offline_message,
+      address: formData.address,
+      website: formData.website,
+      instagram: formData.instagram,
+      
+      // NOVOS CAMPOS ADICIONADOS AQUI:
+      informacoes: formData.informacoes, 
+      is_24h: formData.is24h ?? formData.is_24h ?? false, 
+      
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'company_id' });
+
+    if (error) throw error;
+  },
+
+  // Função para desconectar Google permanece igual
+  disconnectGoogle: async (user: User) => {
+    const { error } = await supabase.from('users_profile')
+      .update({ 
+        google_connected: false, 
+        google_refresh_token: null, 
+        google_calendar_id: null 
+      })
+      .eq('id', user.id);
+      
+    if (error) throw error;
+  }
+},
   
   /* ================= HELPERS ================= */
   helpers: {
