@@ -16,7 +16,7 @@ const InstancesPage: React.FC<InstancesPageProps> = ({ showToast }) => {
   const [qrModal, setQrModal] = useState<Instance | null>(null);
   const [isAdding, setIsAdding] = useState(false);
 
-  // 1. FFunção utilitária para gerar o sufixo (coloque fora ou dentro do componente)
+  // 1. Função utilitária para gerar o sufixo (coloque fora ou dentro do componente)
   const generateRandomHash = () => Math.random().toString(36).substring(2, 10);
 
   // Novo estado agrupado para o formulário de criação
