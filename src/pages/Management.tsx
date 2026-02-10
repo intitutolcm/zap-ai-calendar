@@ -27,6 +27,7 @@ const Management: React.FC<ManagementPageProps> = ({ showToast }) => {
   // Estados de Filtro e Busca
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [showRoleInfo, setShowRoleInfo] = useState(true);
 
   // Estado das Abas PACRIF dentro do modal
   const [pacrifTab, setPacrifTab] = useState<'P' | 'A' | 'C' | 'R' | 'I' | 'F'>('P');
@@ -187,6 +188,32 @@ const Management: React.FC<ManagementPageProps> = ({ showToast }) => {
           )}
         </div>
       </div>
+
+      {/* Role Info Note */}
+      {showRoleInfo && (activeTab === 'team' || activeTab === 'companies') && (
+        <div className="mb-8 bg-blue-50 border border-blue-100 p-6 rounded-[2rem] relative animate-in slide-in-from-top-4 duration-500">
+          <button onClick={() => setShowRoleInfo(false)} className="absolute top-6 right-6 text-blue-300 hover:text-blue-500 transition-colors">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+          <div className="flex items-start gap-4">
+            <div className="p-3 bg-blue-100 text-blue-600 rounded-xl">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            </div>
+            <div>
+              <h4 className="text-lg font-bold text-blue-900 mb-2">Níveis de Permissão</h4>
+              <p className="text-sm text-blue-700/80 mb-4 max-w-2xl">
+                Entenda o que cada nível de acesso pode fazer dentro da plataforma.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-3 text-sm text-blue-800">
+                <p className="flex items-center gap-2"><span className="text-lg">👑</span> <strong>Admin:</strong> Acesso total ao sistema e todas as empresas.</p>
+                <p className="flex items-center gap-2"><span className="text-lg">🏢</span> <strong>Empresa:</strong> Gestão completa da própria organização.</p>
+                <p className="flex items-center gap-2"><span className="text-lg">👨‍⚕️</span> <strong>Profissional:</strong> Acesso a agenda e leads vinculados.</p>
+                <p className="flex items-center gap-2"><span className="text-lg">🎧</span> <strong>Operador:</strong> Acesso restrito ao chat e atendimento.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex justify-center py-20">

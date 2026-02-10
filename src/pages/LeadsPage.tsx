@@ -82,16 +82,16 @@ const LeadsPage: React.FC<LeadsPageProps> = ({ showToast, setActiveTab }) => {
       }
 
       showToast(isHuman ? 'Modo Humano Ativado' : 'IA Reativada', 'success');
-      
+
       // 3. ATUALIZAÇÃO FORÇADA: Recarrega a lista e o modal
       await loadLeads();
-      
+
       const { data: freshLead } = await supabase
         .from('contacts')
         .select('*, conversations(id, is_human_active, instance_id)')
         .eq('id', selectedLead.id)
         .single();
-        
+
       setSelectedLead(freshLead);
 
     } catch (e: any) {
@@ -115,6 +115,38 @@ const LeadsPage: React.FC<LeadsPageProps> = ({ showToast, setActiveTab }) => {
     finally { setIsUpdating(false); }
   };
 
+  const handleDownload = () => {
+    const csvContent = [
+      ['Nome', 'Telefone', 'Status', 'Atendimento'],
+      ...leads.map(l => [
+        l.name,
+        l.phone,
+        l.status,
+        l.conversations?.is_human_active ? 'Humano' : 'IA'
+      ])
+    ].map(e => e.join(',')).join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `leads_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (!confirm('Tem certeza que deseja excluir este lead?')) return;
+
+    try {
+      await api.leads.delete(id);
+      setLeads(prev => prev.filter(l => l.id !== id));
+      showToast('Lead excluído', 'success');
+      if (selectedLead?.id === id) setSelectedLead(null);
+    } catch (error) {
+      showToast('Erro ao excluir lead', 'error');
+    }
+  };
+
   return (
     <div className="p-8 h-full overflow-y-auto custom-scrollbar bg-slate-50/30">
       <header className="mb-8 flex justify-between items-end">
@@ -122,7 +154,14 @@ const LeadsPage: React.FC<LeadsPageProps> = ({ showToast, setActiveTab }) => {
           <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Gestão de Leads</h1>
           <p className="text-slate-400 text-sm">IA vs Humano</p>
         </div>
-        <button onClick={loadLeads} className="p-3 bg-white border rounded-2xl hover:bg-slate-50 transition-all"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" strokeWidth="2" strokeLinecap="round" /></svg></button>
+        <div className="flex gap-2">
+          <button onClick={handleDownload} className="p-3 bg-white border rounded-2xl hover:bg-slate-50 transition-all text-slate-600" title="Baixar CSV">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+          </button>
+          <button onClick={loadLeads} className="p-3 bg-white border rounded-2xl hover:bg-slate-50 transition-all text-slate-600" title="Atualizar">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" strokeWidth="2" strokeLinecap="round" /></svg>
+          </button>
+        </div>
       </header>
 
       {/* CARDS STATS */}
@@ -151,10 +190,19 @@ const LeadsPage: React.FC<LeadsPageProps> = ({ showToast, setActiveTab }) => {
                   <td className="px-8 py-5"><p className="font-bold text-slate-900">{lead.name}</p><p className="text-xs text-slate-400">{lead.phone}</p></td>
                   <td className="px-8 py-5"><span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black uppercase">{lead.status}</span></td>
                   <td className="px-8 py-5">
-                    {lead.conversations?.is_human_active ? 
-                      <span className="flex items-center gap-2 text-amber-600 font-bold text-xs"><span className="w-2 h-2 bg-amber-500 rounded-full animate-ping"/> Humano</span> :
-                      <span className="flex items-center gap-2 text-indigo-600 font-bold text-xs"><span className="w-2 h-2 bg-indigo-500 rounded-full"/> IA Zap</span>
+                    {lead.conversations?.is_human_active ?
+                      <span className="flex items-center gap-2 text-amber-600 font-bold text-xs"><span className="w-2 h-2 bg-amber-500 rounded-full animate-ping" /> Humano</span> :
+                      <span className="flex items-center gap-2 text-indigo-600 font-bold text-xs"><span className="w-2 h-2 bg-indigo-500 rounded-full" /> IA Zap</span>
                     }
+                  </td>
+                  <td className="px-8 py-5 text-right">
+                    <button
+                      onClick={(e) => handleDelete(e, lead.id)}
+                      className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                      title="Excluir Lead"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -168,11 +216,17 @@ const LeadsPage: React.FC<LeadsPageProps> = ({ showToast, setActiveTab }) => {
               <h3 className="text-xs font-black uppercase text-slate-400 mb-4 px-4">{stage}</h3>
               <div className="bg-slate-100/50 p-4 rounded-[2rem] min-h-[400px] border-2 border-dashed border-slate-200">
                 {leads.filter(l => l.status === stage).map(lead => (
-                  <div key={lead.id} onClick={() => setSelectedLead(lead)} className="bg-white p-5 rounded-2xl shadow-sm border mb-4 border-slate-200 hover:border-indigo-300 transition-all">
+                  <div key={lead.id} onClick={() => setSelectedLead(lead)} className="bg-white p-5 rounded-2xl shadow-sm border mb-4 border-slate-200 hover:border-indigo-300 transition-all relative group cursor-pointer">
                     <p className="font-bold text-slate-900 mb-1">{lead.name}</p>
                     <span className={`text-[9px] px-2 py-0.5 rounded-md font-black uppercase ${lead.conversations?.is_human_active ? 'bg-amber-100 text-amber-600' : 'bg-indigo-100 text-indigo-600'}`}>
                       {lead.conversations?.is_human_active ? 'Humano' : 'Agente IA'}
                     </span>
+                    <button
+                      onClick={(e) => handleDelete(e, lead.id)}
+                      className="absolute top-2 right-2 p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
                   </div>
                 ))}
               </div>
@@ -190,13 +244,13 @@ const LeadsPage: React.FC<LeadsPageProps> = ({ showToast, setActiveTab }) => {
               <header className="flex justify-between items-center mb-8">
                 <h2 className="text-2xl font-black text-slate-900">Gestão de Lead</h2>
                 <button onClick={() => setSelectedLead(null)} className="p-2 hover:bg-slate-100 rounded-full">
-                  <svg className="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" strokeWidth="2" strokeLinecap="round"/></svg>
+                  <svg className="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" strokeWidth="2" strokeLinecap="round" /></svg>
                 </button>
               </header>
 
               {/* BOTÃO IR PARA CONVERSA - NOVO */}
               {selectedLead.conversations?.id && (
-                <button 
+                <button
                   onClick={() => setActiveTab('conversations')}
                   className="w-full mb-6 flex items-center justify-center gap-2 py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-lg hover:bg-slate-800 transition-all active:scale-95"
                 >
@@ -208,14 +262,14 @@ const LeadsPage: React.FC<LeadsPageProps> = ({ showToast, setActiveTab }) => {
               <div className="bg-slate-50 p-6 rounded-3xl mb-8 border border-slate-100">
                 <h4 className="text-[10px] font-black text-slate-400 uppercase mb-4">Controle de Atendimento</h4>
                 <div className="flex gap-4">
-                  <button 
+                  <button
                     disabled={isUpdating}
                     onClick={() => toggleAtendimento(true)}
                     className={`flex-1 py-4 rounded-2xl font-bold text-sm transition-all ${selectedLead.conversations?.is_human_active ? 'bg-amber-500 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-200'}`}
                   >
                     Assumir Humano
                   </button>
-                  <button 
+                  <button
                     disabled={isUpdating}
                     onClick={() => toggleAtendimento(false)}
                     className={`flex-1 py-4 rounded-2xl font-bold text-sm transition-all ${selectedLead.conversations?.is_human_active === false ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-200'}`}
@@ -227,20 +281,27 @@ const LeadsPage: React.FC<LeadsPageProps> = ({ showToast, setActiveTab }) => {
 
               {/* FORMULÁRIO */}
               <div className="space-y-6">
-                <input type="text" placeholder="Nome" value={selectedLead.name} onChange={e => setSelectedLead({...selectedLead, name: e.target.value})} className="w-full px-5 py-3 rounded-2xl bg-slate-50 border-none font-medium"/>
+                <input type="text" placeholder="Nome" value={selectedLead.name} onChange={e => setSelectedLead({ ...selectedLead, name: e.target.value })} className="w-full px-5 py-3 rounded-2xl bg-slate-50 border-none font-medium" />
                 <div className="grid grid-cols-2 gap-4">
-                  <input type="text" placeholder="CPF" value={selectedLead.cpf || ''} onChange={e => setSelectedLead({...selectedLead, cpf: e.target.value})} className="w-full px-5 py-3 rounded-2xl bg-slate-50 border-none font-medium"/>
-                  <input type="text" readOnly value={selectedLead.phone} className="w-full px-5 py-3 rounded-2xl bg-slate-100 border-none font-medium text-slate-400"/>
+                  <input type="text" placeholder="CPF" value={selectedLead.cpf || ''} onChange={e => setSelectedLead({ ...selectedLead, cpf: e.target.value })} className="w-full px-5 py-3 rounded-2xl bg-slate-50 border-none font-medium" />
+                  <input type="text" readOnly value={selectedLead.phone} className="w-full px-5 py-3 rounded-2xl bg-slate-100 border-none font-medium text-slate-400" />
                 </div>
-                <select value={selectedLead.status} onChange={e => setSelectedLead({...selectedLead, status: e.target.value})} className="w-full px-5 py-3 rounded-2xl bg-slate-50 border-none font-medium">
+                <select value={selectedLead.status} onChange={e => setSelectedLead({ ...selectedLead, status: e.target.value })} className="w-full px-5 py-3 rounded-2xl bg-slate-50 border-none font-medium">
                   {KANBAN_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
                 <div className="bg-indigo-50/50 p-6 rounded-[2rem] border border-indigo-100">
                   <h4 className="text-xs font-black text-indigo-600 uppercase mb-4">Resumo da IA</h4>
-                  <textarea rows={4} value={selectedLead.summary || ''} onChange={e => setSelectedLead({...selectedLead, summary: e.target.value})} className="w-full bg-transparent border-none focus:ring-0 text-sm font-medium text-slate-600 resize-none" placeholder="Sem resumo ainda..."/>
+                  <textarea rows={4} value={selectedLead.summary || ''} onChange={e => setSelectedLead({ ...selectedLead, summary: e.target.value })} className="w-full bg-transparent border-none focus:ring-0 text-sm font-medium text-slate-600 resize-none" placeholder="Sem resumo ainda..." />
                 </div>
                 <button disabled={isUpdating} onClick={handleSaveLeadEdits} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold shadow-xl disabled:opacity-50">
                   {isUpdating ? 'Salvando...' : 'Salvar Alterações'}
+                </button>
+
+                <button
+                  onClick={(e) => handleDelete(e, selectedLead.id)}
+                  className="w-full text-red-400 py-3 text-sm font-bold hover:text-red-600 transition-colors"
+                >
+                  Excluir Lead
                 </button>
               </div>
             </div>

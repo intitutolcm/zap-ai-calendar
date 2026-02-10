@@ -1043,6 +1043,35 @@ export const api = {
         if (convErr) throw convErr;
         return newConv.id;
       }
+    },
+
+    delete: async (leadId: string) => {
+      // 1. Remover Agendamentos
+      await supabase.from('appointments').delete().eq('contact_id', leadId);
+
+      // 2. Remover Faturas e PIX
+      const { data: invoices } = await supabase.from('invoices').select('id').eq('contact_id', leadId);
+      if (invoices?.length) {
+        const invIds = invoices.map(i => i.id);
+        await supabase.from('pix_charges').delete().in('invoice_id', invIds);
+        await supabase.from('invoices').delete().in('id', invIds);
+      }
+
+      // 3. Remover Conversas e Mensagens
+      const { data: conversations } = await supabase.from('conversations').select('id').eq('contact_id', leadId);
+      if (conversations?.length) {
+        const convIds = conversations.map(c => c.id);
+        await supabase.from('messages').delete().in('conversation_id', convIds);
+        await supabase.from('conversations').delete().in('id', convIds);
+      }
+
+      // 4. Remover Contato
+      const { error } = await supabase
+        .from('contacts')
+        .delete()
+        .eq('id', leadId);
+
+      if (error) throw error;
     }
   },
 
