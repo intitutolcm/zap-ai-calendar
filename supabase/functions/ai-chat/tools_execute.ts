@@ -10,6 +10,7 @@ import {
     handleGeneratePayment,
     handleCheckPaymentStatus
 } from "./tools_payments.ts";
+import { handleUpdateLeadStage } from "./tools_leads.ts";
 
 export async function executeTool(
     functionName: string,
@@ -36,6 +37,8 @@ export async function executeTool(
                 return await handleGeneratePayment(supabase, args, inst.company_id);
             case "check_payment_status":
                 return await handleCheckPaymentStatus(supabase, args);
+            case "update_lead_stage":
+                return await handleUpdateLeadStage(supabase, conversation.contact_id, args.status);
             default:
                 return `Erro: Ferramenta ${functionName} não implementada.`;
         }

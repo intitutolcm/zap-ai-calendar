@@ -81,7 +81,12 @@ serve(async (req) => {
 3. Se o usuário quiser cancelar, use a ferramenta 'cancel_appointment'. O sistema automaticamente removerá do calendário Google dele.
 4. Identifique claramente o ID_DO_AGENDAMENTO e o TXID nas suas respostas quando gerá-los.
 5. Quando agendar ou cancelar, informe ao usuário que o calendário dele será atualizado automaticamente.
-6. Se o usuário enviar uma imagem ou PDF, o sistema tentará analisar e você receberá uma message como [Imagem]: [Descrição]. Se for um comprovante de pagamento, use a ferramenta 'check_payment_status' para verificar no banco de dados se o pagamento já caiu.`;
+6. [IMPORTANTE] GESTÃO DE LEAD:
+   - Se o usuário demonstrar interesse claro, use 'update_lead_stage' com status 'Interesse'.
+   - Se você criar um agendamento com sucesso ('create_appointment'), IMEDIATAMENTE use 'update_lead_stage' com status 'Agendado'.
+   - Se o pagamento for confirmado, use 'update_lead_stage' com status 'Faturado'.
+   - Se o usuário disser explicitamente que não tem interesse, mude para 'Perdido'.
+7. Se o usuário enviar uma imagem ou PDF, o sistema tentará analisar e você receberá uma message como [Imagem]: [Descrição]. Se for um comprovante de pagamento, use a ferramenta 'check_payment_status' para verificar no banco de dados se o pagamento já caiu.`;
 
     let msgs: any[] = [
       { role: "system", content: systemContent },

@@ -97,5 +97,23 @@ export const tools = [
                 required: ["appointment_id"]
             }
         }
+    },
+    {
+        type: "function",
+        function: {
+            name: "update_lead_stage",
+            description: "Atualiza o estágio do lead no pipeline Kanban.",
+            parameters: {
+                type: "object",
+                properties: {
+                    status: {
+                        type: "string",
+                        enum: ["Novo", "Interesse", "Agendado", "Faturado", "Perdido"],
+                        description: "O novo estágio do lead."
+                    }
+                },
+                required: ["status"]
+            }
+        }
     }
 ];
