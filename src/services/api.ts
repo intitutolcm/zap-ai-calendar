@@ -213,6 +213,8 @@ export const api = {
         instanceName: name,
         integration: 'WHATSAPP-BAILEYS',
         webhook: {
+          url: GLOBAL_WEBHOOK_URL,
+          enabled: true,
           events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'INSTANCE_UPDATE'],
         },
       };
@@ -249,24 +251,61 @@ export const api = {
     },
 
     logout: async (name: string) => {
-      await fetch(`${EVO_URL}/instance/logout/${name}`, {
+      const response = await fetch(`${EVO_URL}/instance/logout/${name}`, {
         method: 'DELETE',
         headers,
       });
+
+      if (!response.ok) {
+        try {
+          const errorData = await response.json();
+          const messages = errorData?.response?.message || [];
+          const errorMsg = Array.isArray(messages) ? messages[0] : messages;
+
+          // Se o erro for "Connection Closed", consideramos que já está desconectado
+          // e prosseguimos para atualizar o banco local.
+          if (typeof errorMsg === 'string' && errorMsg.includes('Connection Closed')) {
+            console.warn('Instância já estava desconectada (Connection Closed). Atualizando localmente.');
+          } else {
+            throw new Error(typeof errorMsg === 'string' ? errorMsg : 'Falha ao desconectar instância.');
+          }
+        } catch (e: any) {
+          // Se não for o erro de conexão fechada, repassa o erro
+          if (e.message && e.message.includes('Connection Closed')) {
+            // Ignora e segue
+          } else {
+            throw e;
+          }
+        }
+      }
+
       await supabase.from('instances').update({ connection_status: 'close' }).eq('name', name);
     },
 
-    restart: async (name: string) =>
-      fetch(`${EVO_URL}/instance/restart/${name}`, {
+    restart: async (name: string) => {
+      const response = await fetch(`${EVO_URL}/instance/restart/${name}`, {
         method: 'POST',
         headers,
-      }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Falha ao reiniciar instância.');
+      }
+
+      return response.json();
+    },
 
     delete: async (name: string) => {
-      await fetch(`${EVO_URL}/instance/delete/${name}`, {
+      const response = await fetch(`${EVO_URL}/instance/delete/${name}`, {
         method: 'DELETE',
         headers,
       });
+
+      if (!response.ok) {
+        // Não lançamos erro aqui pois queremos limpar do banco de qualquer forma
+        // Mas seria ideal logar ou alertar
+        console.error('Falha ao deletar na Evolution, removendo apenas do banco local.');
+      }
 
       await supabase.from('instances').delete().eq('name', name);
     },
