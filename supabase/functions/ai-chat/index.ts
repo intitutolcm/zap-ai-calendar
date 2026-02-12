@@ -26,6 +26,12 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    // Validate required environment variables
+    if (!Deno.env.get("OPENAI_KEY")) {
+      console.error("[ERROR]: OPENAI_KEY not configured");
+      throw new Error("OpenAI API key not configured");
+    }
+
     // 1. Debounce Logic
     const executionId = new Date().getTime();
     const { data: conversation } = await supabase.from("conversations").select("temp_buffer, contact_id").eq("id", conversation_id).single();
@@ -95,15 +101,26 @@ serve(async (req) => {
     ];
 
     const callOpenAI = async (messagesArr: any, toolList: any) => {
+      console.log(`[OpenAI]: Calling API with ${messagesArr.length} messages`);
       const res = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: { "Authorization": `Bearer ${Deno.env.get("OPENAI_KEY")}`, "Content-Type": "application/json" },
         body: JSON.stringify({ model: "gpt-4o-mini", messages: messagesArr, tools: toolList, temperature: agent?.temperature || 0.7 })
       });
-      return await res.json();
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error(`[OpenAI]: API Error ${res.status}: ${errorText}`);
+        throw new Error(`OpenAI API error: ${res.status} - ${errorText}`);
+      }
+
+      const data = await res.json();
+      console.log(`[OpenAI]: Response received, finish_reason: ${data.choices?.[0]?.finish_reason}`);
+      return data;
     };
 
     let response = await callOpenAI(msgs, tools);
+    console.log(`[OpenAI]: Initial response - has tool_calls: ${!!response.choices?.[0]?.message?.tool_calls}`);
 
     while (response.choices?.[0]?.message?.tool_calls) {
       const toolCalls = response.choices[0].message.tool_calls;
@@ -112,28 +129,44 @@ serve(async (req) => {
       for (const toolCall of toolCalls) {
         const functionName = toolCall.function.name;
         const args = JSON.parse(toolCall.function.arguments);
+        console.log(`[Tool]: Executing ${functionName} with args:`, JSON.stringify(args));
         const result = await executeTool(functionName, args, supabase, inst, conversation);
+        console.log(`[Tool]: ${functionName} result:`, result.substring(0, 200));
         msgs.push({ tool_call_id: toolCall.id, role: "tool", name: functionName, content: result });
       }
       response = await callOpenAI(msgs, tools);
     }
 
     const reply = response.choices?.[0]?.message?.content;
+    console.log(`[Reply]: Generated reply length: ${reply?.length || 0}`);
 
-    if (reply) {
-      await fetch(`${Deno.env.get("EVO_API_URL")}/message/sendText/${inst.name}`, {
-        method: "POST",
-        headers: { "apikey": inst.token, "Content-Type": "application/json" },
-        body: JSON.stringify({ number: phone, text: reply })
-      });
-      await supabase.from("messages").insert({ conversation_id, sender: "AI", content: reply });
-      await supabase.from("conversations").update({ last_message: reply.substring(0, 100), last_timestamp: new Date().toISOString() }).eq("id", conversation_id);
+    if (!reply) {
+      console.error("[Reply]: No content in AI response");
+      console.error("[Reply]: Full response:", JSON.stringify(response, null, 2));
+      throw new Error("AI did not generate a response");
     }
+
+    console.log(`[Reply]: Sending to WhatsApp: ${reply.substring(0, 100)}...`);
+    await fetch(`${Deno.env.get("EVO_API_URL")}/message/sendText/${inst.name}`, {
+      method: "POST",
+      headers: { "apikey": inst.token, "Content-Type": "application/json" },
+      body: JSON.stringify({ number: phone, text: reply })
+    });
+
+    console.log(`[Reply]: Saving to database`);
+    await supabase.from("messages").insert({ conversation_id, sender: "AI", content: reply });
+    await supabase.from("conversations").update({ last_message: reply.substring(0, 100), last_timestamp: new Date().toISOString() }).eq("id", conversation_id);
 
     console.log("--- SUCCESS ---");
     return new Response("OK");
   } catch (error) {
-    console.error("ERRO:", error.message);
-    return new Response(error.message, { status: 500 });
+    console.error("=== ERRO COMPLETO ===");
+    console.error("Message:", error.message);
+    console.error("Stack:", error.stack);
+    console.error("=====================");
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { "Content-Type": "application/json", ...corsHeaders }
+    });
   }
 });
